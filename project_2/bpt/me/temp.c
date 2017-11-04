@@ -1,11 +1,71 @@
-#include "bpt.h"
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <inttypes.h>
+#define true (1)
+#define false (0)
+#define page_size (4096)
+#define header_page_size (128)
+#define key_record_size (128)
+int64_t root = 0;//루트는 계속 가지고 있으면서 갱신해주자.
+int fd;//이 값은 open command시에만 바뀔 수 있다.
 
-// GLOBALS.
-
-int64_t root = 0;
-int fd = -1;
 char char_null[120];
 int64_t bit64_0 = 0;
+
+//branch factor ( order ) 
+//leaf : 32 (numKeys will be 31)
+//internal : 249 (numKeys will be 248)
+
+//useful functions for object oriented programming
+//added when refactoring
+int64_t page_key_record_size(int64_t page_offset);
+int64_t value_read(int64_t offset, int byte); //pread and then returns what is written. used for getting key.
+ssize_t swrite(int fd, const void* buf, int64_t size_, int64_t offset);
+void shift_byte(int64_t start, int64_t end, int64_t size_);
+int get_order_of_current_page(int64_t page_offset);
+int get_numKeys_of_page(int64_t page_offset);
+int cut(int length);
+int test_leaf(int64_t page_offset);
+
+//free_page_management
+void make_free_page(); //free page를 만드는 것이다. make_header_page에서 한번 부른다.
+void make_header_page();
+int64_t make_leaf_page(); //to use offset
+int64_t make_internal_page();
+
+//open_db
+int open_db(const char*); //가장 처음에 부르는 것이다.
+
+//find record & find leaf
+char* find(int64_t key);
+int64_t find_leaf(int64_t key);
+
+//insert
+int insert(int64_t key, char* value);
+void insert_into_leaf(int64_t leaf_offset, int64_t key, char* value);
+void insert_into_leaf_after_splitting(int64_t left_offset, int64_t key, char* value);
+void insert_into_parent(int64_t left, int64_t right, int64_t new_key);
+void insert_into_new_root(int64_t left, int64_t key, int64_t right); //have to return or change root
+void insert_into_node(int left_index, int64_t parent, int64_t new_key, int64_t right);
+void insert_into_node_after_splitting(int left_index, int64_t new_key, int64_t right);
+
+//delete
+int delete_(int64_t key);
+int get_neighbor_index(int64_t offset);
+void remove_entry_from_page(int64_t key, int64_t offset);
+void return_to_free_page(int64_t offset);
+void delete_entry(int64_t key_leaf, int64_t key);
+void redistribute_pages(int64_t page, int64_t neighbor_page, int neighbor_index, int prime_key_index, int64_t prime_key);
+void coalesce_pages(int64_t page, int64_t neighbor_page, int neighbor_index, int64_t prime_key);
+void display();
+
+typedef struct entry{
+	int64_t offset;
+	int depth;
+}ENTRY;
 
 void display(){
 	if(root==0){
@@ -35,7 +95,7 @@ void display(){
 		//print key
 		int key_record_size_ = test_leaf(pos.offset)?128:16;
 		
-		printf("(p.%" PRId64")",pos.offset/4096);
+		printf("(p.% " PRId64")",pos.offset/4096);
 		int i;
 		for (i=0;i<numChild;i++){
 			printf("%" PRId64" ",value_read(pos.offset+header_page_size+key_record_size_*i,8));
@@ -410,7 +470,7 @@ void insert_into_leaf_after_splitting(int64_t leaf_offset, int64_t key, char* va
 	int split;
 
 	int64_t new_leaf = make_leaf_page();
-	printf("new leaf created : p.%" PRId64 "\n", new_leaf);
+	printf("new leaf created : p.%" PRId64 "\n", new_leaf/4096);
 	 
 	shift_byte(leaf_offset, new_leaf, 8);
 	int order_ = get_order_of_current_page(leaf_offset);
@@ -613,11 +673,10 @@ int64_t make_leaf_page() {
 	//number of keys 는 0으로 설정되어있다.
 	int64_t new_leaf_offset; pread(fd, &new_leaf_offset, 8, 4096);
 	
-	/*
 	// (stack) link again
 	int64_t next; pread(fd,&next,8,new_leaf_offset);
 	swrite(fd,&next,8,4096);
-	*/
+	
 	//initialize leaf page
 	swrite(fd, &bit64_0, 8, new_leaf_offset + 120); //right siblings : 0 initially
 	int leaf_ = 1; swrite(fd, &leaf_, 4, 8 + new_leaf_offset);
@@ -631,11 +690,11 @@ int64_t make_leaf_page() {
 int64_t make_internal_page() {
 	//filling number of keys and is leaf
 	int64_t new_internal_offset; pread(fd, &new_internal_offset, 8, 4096);
-	/*
+	
 	// (stack) link again
 	int64_t next; pread(fd,&next,8,new_internal_offset);
 	swrite(fd,&next,8,4096);
-	*/
+	
 	//initialize internal page
 	swrite(fd,&bit64_0,8,new_internal_offset);
 	int leaf_ = 0; swrite(fd,&leaf_,4,8+new_internal_offset);
@@ -646,23 +705,21 @@ int64_t make_internal_page() {
 	return new_internal_offset;
 }
 
-int64_t make_free_page() {
+void make_free_page() {
 	int64_t number_of_pages; pread(fd, &number_of_pages, 8, 16);
 	
 	int64_t new_free_page_offset = number_of_pages*page_size;
-	//int64_t existing_page; pread(fd,&existing_page,8,4096);
+	int64_t existing_page; pread(fd,&existing_page,8,4096);
 	//what [4096-5104] has. it can be null.
 
 	//there exists free page already. then do not make any.
-	/*if(existing_page) 
+	if(existing_page) 
 		return;
 	else {
-	*/
 		swrite(fd, &new_free_page_offset, 8, 4096);
 		swrite(fd, &bit64_0, 8, new_free_page_offset); //next not existing
-		/*
 	}
-	*/
+
 	number_of_pages++; swrite(fd, &number_of_pages, 8, 16);
 }
 
@@ -696,4 +753,60 @@ int open_db(const char* pathname) {
 	int64_t root_page_offset; pread(fd, &root_page_offset, 8, 8);
 	printf("root_page offset : %" PRId64"\n", root_page_offset);
 	return 0; //main has to know about open_db
+}
+
+int main(int argc, const char* argv[]) {
+	char command;
+	int64_t insert_key;
+	int opened = false;
+	printf("> ");
+	while (scanf("%c", &command) != EOF) {
+		switch (command) {
+		case 'i':
+			scanf("%" PRId64, &insert_key);
+			char value_[120]; scanf("%s", value_);
+			if (opened)
+				insert(insert_key, value_);
+			display();
+			break;
+		case 'd':
+			if(opened)
+				display();
+			break;
+		case 'r':
+			scanf("%" PRId64, &insert_key);
+			if (opened)
+				delete_(insert_key);
+			display();
+			break;
+		case 'o':
+			printf("opening ");
+			char absolute_path[200]; getcwd(absolute_path, 199);
+			char path[50];	scanf("%s", path);
+			printf("%s/%s\n", absolute_path, path);
+			open_db(path); //설정 된후 계속 바뀔 것이다.
+			opened = true;
+			break;
+		case 'f':
+			scanf("%" PRId64, &insert_key);
+			if (opened) {
+				char* _value = find(insert_key);
+				if (_value)
+					printf("%s\n", _value);
+				else
+					printf("there is no matching record. sorry\n");
+				free(_value);
+			}
+			break;
+		case 'q':
+			exit(EXIT_SUCCESS);
+		default:
+			break;
+		}
+		if (!opened)
+			printf("operation cannot permitted. \"OPEN_DB\" should be preceded \n");
+		while (getchar() != (int)'\n');
+		printf("> ");
+	}
+	return 0;
 }
