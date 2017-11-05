@@ -1,3 +1,5 @@
+#include "bpt.h"
+
 int main(int argc, const char* argv[]) {
 	char command;
 	int64_t insert_key;
