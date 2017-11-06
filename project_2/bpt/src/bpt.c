@@ -549,8 +549,8 @@ int get_order_of_current_page(int64_t page_offset) {
 	//leaf : 32
 	//internal : 249
 	//invariant : numKeys is 1-less than order
-	if (test_leaf(page_offset)) return 4;
-	else return 4;
+	if (test_leaf(page_offset)) return 32;
+	else return 249;
 }
 
 int64_t find_leaf(int64_t key) {
