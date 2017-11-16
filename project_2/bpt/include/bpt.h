@@ -56,7 +56,7 @@ void insert_into_node(int left_index, int64_t parent, int64_t new_key, int64_t r
 void insert_into_node_after_splitting(int left_index, int64_t new_key, int64_t right);
 
 //delete
-int delete_(int64_t key);
+int delete(int64_t key);
 int get_neighbor_index(int64_t offset);
 void remove_entry_from_page(int64_t key, int64_t offset);
 void return_to_free_page(int64_t offset);

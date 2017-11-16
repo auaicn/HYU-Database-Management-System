@@ -68,7 +68,7 @@ void return_to_free_page(int64_t offset) {
 }
 
 void adjust_root() {
-	printf("adjusting root\n");
+	//printf("adjusting root\n");
 	int num; pread(fd, &num, 4, root + 12); 
 	if (num) return; //there's key in root -> no need to adjust.
 	else{
@@ -92,7 +92,7 @@ void adjust_root() {
 
 
 void coalesce_pages(int64_t page, int64_t neighbor_page, int neighbor_index, int64_t prime_key) {
-	printf("coalescing!\n");
+	//printf("coalescing!\n");
 	int64_t parent; pread(fd, &parent, 8, page);
 	int numKeys_neighbor;
 	int numKeys_page;
@@ -142,7 +142,7 @@ int64_t page_key_record_size(int64_t page_offset) {
 
 
 void redistribute_pages(int64_t page, int64_t neighbor_page, int neighbor_index, int prime_key_index, int64_t prime_key) {
-	printf("redistributing!\n");
+	//printf("redistributing!\n");
 	int64_t parent; pread(fd, &parent, 8, page);
 	int64_t new_key;
 
@@ -243,7 +243,7 @@ void delete_entry(int64_t page, int64_t key){
 	int min_keys = get_order_of_current_page(page)/2;
 
 	if (get_numKeys_of_page(page) >= min_keys){
-		printf("delete finished (enough numKeys)\n");
+		//printf("delete finished (enough numKeys)\n");
 		return;
 	}
 	//get parent of page
@@ -267,14 +267,14 @@ void delete_entry(int64_t page, int64_t key){
 
 }
 
-int delete_(int64_t key) {
+int delete(int64_t key) {
 	char* key_record = find(key);
 	int64_t key_leaf = find_leaf(key);
 	if (key_record != 0 && key_leaf != 0) {
 		delete_entry(key_leaf,key);
 		free(key_record);
 	}else{
-		printf("there is no record that matches with the key (%" PRId64").\n",key);
+		//printf("there is no record that matches with the key (%" PRId64").\n",key);
 	}
 	return 0;
 }
@@ -291,7 +291,7 @@ void remove_entry_from_page(int64_t key,int64_t offset) {
 		else i++;
 	}
 	if (to_compare != key) {
-		printf("not found sorry. T^T\n");
+		//printf("not found sorry. T^T\n");
 		return;
 	}
 
@@ -312,14 +312,14 @@ ssize_t swrite(int fd, const void* buf, int64_t size_, int64_t offset) {
 
 
 void insert_into_node_after_splitting(int left_index, int64_t new_key, int64_t right) {
-	printf("inserting into new internal page.\n");
+	//printf("inserting into new internal page.\n");
 	int split;
 	//get parent from right child.
 	int64_t parent; pread(fd, &parent, 8, right);
 	int order_ = get_order_of_current_page(parent);
 	//make new internal page.
 	int64_t new_internal_page_offset = make_internal_page();
-	printf("new internal_page created : p.%" PRId64"\n", new_internal_page_offset/4096);
+	//printf("new internal_page created : p.%" PRId64"\n", new_internal_page_offset/4096);
 	char* temp = (char*)malloc(order_ * 16);
 	//16*left_index copy
 	pread(fd, temp, left_index * 16, parent + header_page_size);
@@ -382,7 +382,7 @@ void insert_into_new_root(int64_t left, int64_t key, int64_t right) {
 	//renew global root.
 	root = new_root_offset;
 	swrite(fd,&root,8,8);
-	printf("new root created. pageno is %" PRId64"\n", root/4096);
+	//printf("new root created. pageno is %" PRId64"\n", root/4096);
 }
 
 
@@ -412,7 +412,7 @@ void insert_into_leaf_after_splitting(int64_t leaf_offset, int64_t key, char* va
 	int split;
 
 	int64_t new_leaf = make_leaf_page();
-	printf("new leaf created : p.%" PRId64 "\n", new_leaf);
+	//printf("new leaf created : p.%" PRId64 "\n", new_leaf);
 
 	shift_byte(leaf_offset, new_leaf, 8);
 	int order_ = get_order_of_current_page(leaf_offset);
@@ -469,7 +469,7 @@ int64_t value_read(int64_t offset, int byte_) {
 }
 
 void insert_into_leaf(int64_t leaf_offset, int64_t key, char* value) {
-	printf("pushing into leaf : p.%" PRId64 "\n", leaf_offset/4096);
+	//printf("pushing into leaf : p.%" PRId64 "\n", leaf_offset/4096);
 	int insertion_point;
 	int num = get_numKeys_of_page(leaf_offset);
 	insertion_point = 0;
@@ -490,7 +490,7 @@ void insert_into_leaf(int64_t leaf_offset, int64_t key, char* value) {
 
 int insert(int64_t key, char* value) { //사실 root가 전역변수라서 return 해줘야 하는지도 모르겠다.
 	if (find(key) != 0) {
-		printf("duplicate insert.\ntry again.\n");
+		//printf("duplicate insert.\ntry again.\n");
 		return 0;
 	}
 	if (root == 0) { //first insert
@@ -549,14 +549,14 @@ int get_order_of_current_page(int64_t page_offset) {
 	//leaf : 32
 	//internal : 249
 	//invariant : numKeys is 1-less than order
-	if (test_leaf(page_offset)) return 4;
-	else return 4;
+	if (test_leaf(page_offset)) return 32;
+	else return 249;
 }
 
 int64_t find_leaf(int64_t key) {
 	int64_t track = root;
 	if (root == 0) {//root offset initialized to 0
-		printf("empty tree\n");
+		//printf("Not Exists\n");
 		return 0; //empty tree : return 0 to find function
 	}
 	while (true) {//linear search
@@ -693,9 +693,11 @@ int open_db(const char* pathname) {
 	pread(fd, &root, 8, 8);
 	//int64_t num_of_pages; pread(fd, &num_of_pages, 8, 16);
 	//printf("number of pages :%" PRId64"\n", num_of_pages);
+	/*
 	int64_t free_page_offset; pread(fd, &free_page_offset, 8, 0);
 	printf("free_page : p.%" PRId64"\n", free_page_offset/4096);
 	int64_t root_page_offset; pread(fd, &root_page_offset, 8, 8);
 	printf("root_page offset : %" PRId64"\n", root_page_offset);
+	*/
 	return 0; //main has to know about open_db
 }
