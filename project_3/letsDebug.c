@@ -1,5 +1,5 @@
-#ifndef __BPT_H__
-#define __BPT_H__
+//#ifndef __BPT_H__
+//#define __BPT_H__
 
 #include <stdio.h>
 #include <string.h>
@@ -16,11 +16,16 @@
 #define HEADER_PAGE_OFFSET (0)
 #define FREE_PAGE_LIST_OFFSET (4096)
 
-extern int64_t root;//루트는 계속 가지고 있으면서 갱신해주자.
-extern int fd; //initially 0
-extern char char_null[120];
-extern int64_t bit64_0;
-extern int table_count;
+int64_t root;//루트는 계속 가지고 있으면서 갱신해주자.
+int fd; //initially 0
+char char_null[120];
+int64_t bit64_0;
+int table_count=1;
+
+//struct declaration
+typedef struct entry ENTRY; //for queue used in display.
+typedef struct buffer_structure buffer_structure;
+typedef struct buffer_manager buffer_manager;
 
 // utility
 int test_leaf(buffer_structure* block);
@@ -28,7 +33,7 @@ int get_numKeys_of_page(buffer_structure* page);
 int page_key_record_size(buffer_structure* page);
 int get_order_of_current_page(buffer_structure* page);
 int cut(int length);
-
+void show_me_buffer();
 //free_page_management & open db
 void make_free_page();
 void make_header_page();
@@ -53,7 +58,7 @@ void insert_into_leaf_after_splitting(buffer_structure* left_offset, int64_t key
 void insert_into_parent(buffer_structure* left, buffer_structure* right, int64_t new_key);
 void insert_into_new_root(buffer_structure* left, int64_t key, buffer_structure* right); //have to return or change root
 void insert_into_node(int left_index, buffer_structure* parent, int64_t new_key, buffer_structure* right);
-void insert_into_node_after_splitting(buffer_structure* parent, int left_index, int64_t new_key, buffer_structure* right);
+void insert_into_node_after_splitting(buffer_structure* left, int left_index, int64_t new_key);
 
 //delete
 int delete_(int table_id, int64_t key);
@@ -64,11 +69,6 @@ int delete_entry(buffer_structure* page, int64_t key);
 int redistribute_pages(buffer_structure* parent, buffer_structure* page, buffer_structure* neighbor_page, int neighbor_index, int prime_key_index, int64_t prime_key);
 int coalesce_pages(buffer_structure* parent, buffer_structure* page, buffer_structure* neighbor_page, int neighbor_index, int64_t prime_key);
 void display();
-
-
-typedef struct entry ENTRY;
-typedef struct buffer_structure buffer_structure;
-typedef struct buffer_manager buffer_manager;
 
 buffer_manager* new_buffer_manager(int max_blocks);
 buffer_structure* new_buffer_block(int64_t offset);
@@ -103,7 +103,7 @@ struct buffer_manager {
 };
 
 buffer_manager* BUFFER_MANAGER;
-#endif
+//#endif
 
 //struct constructor
 buffer_manager* new_buffer_manager(int max_blocks) {
@@ -116,12 +116,13 @@ buffer_manager* new_buffer_manager(int max_blocks) {
 }
 
 buffer_structure* new_buffer_block(int64_t offset) {
+	printf("making new block\n");
 	buffer_structure* new_buffer = (buffer_structure*)malloc(sizeof(buffer_structure));
 	new_buffer->frame = (char*)malloc(page_size);
 	pread(fd, new_buffer->frame, 4096, offset);// pread only here
 	new_buffer->next = NULL;
 	new_buffer->prev = NULL;
-	new_buffer->table_id = get_table_id();
+	new_buffer->table_id = table_count;
 	new_buffer->is_dirty = 0;
 	new_buffer->pin_count = 0;
 	new_buffer->page_offset = offset;
@@ -181,7 +182,7 @@ void display() {
 		for (i = 0; i<numChild + 1; i++) {
 			++queue_end;
 			memcpy(&temp, pos.page->frame + header_page_size - 8 + 16 * i, 8);
-			queue[queue_end].page = temp;
+			queue[queue_end].page = ask_buffer_manager(temp);
 			queue[queue_end].depth = pos.depth + 1;
 		}
 	}
@@ -198,28 +199,34 @@ int get_table_id() {
 
 
 buffer_structure* ask_buffer_manager(int64_t offset) {
-
+	printf("-------------asking for page %" PRId64" --------\n",offset/4096);
 	buffer_structure* search = BUFFER_MANAGER->MRU;
 	if (search == NULL) {
-		//first ask_buffer
+		printf("MRU NULL -> first ask_buffer\n");
 		//MRU NULL
 		buffer_structure* first_buffer_block = new_buffer_block(offset);
 		BUFFER_MANAGER->MRU = first_buffer_block;
 		BUFFER_MANAGER->LRU = first_buffer_block;
 		first_buffer_block->next = NULL;
 		first_buffer_block->prev = NULL;
+		show_me_buffer();
 		return first_buffer_block;
 	}
 
 	//MRU NOT NULL
 	//at least one element in the list
+	printf("MRU NOT NULL -> searching page that has offset\n");
 	for (; search != NULL; search = search->next) {
-		if (memcmp(&search->page_offset, &offset, 8)) {
+
+		if (!memcmp(&search->page_offset, &offset, 8)) {
+			printf("cache hit\n");
 			//cache hit search.offset == offset
 			//chacge location in list
 			//remove
-			if (BUFFER_MANAGER->MRU == search)
+			if (BUFFER_MANAGER->MRU == search){
+				show_me_buffer();
 				return search;
+			}
 			if (search->next == NULL) {
 				search->prev->next = search->next; //RVALUE is NULL
 				BUFFER_MANAGER->LRU = search->prev;
@@ -234,6 +241,7 @@ buffer_structure* ask_buffer_manager(int64_t offset) {
 			search->prev = search->next->prev; //RVALUE is NULL
 			search->next->prev = search;
 			BUFFER_MANAGER->MRU = search;
+			show_me_buffer();
 
 			return search;
 		}
@@ -241,6 +249,7 @@ buffer_structure* ask_buffer_manager(int64_t offset) {
 	//cache not hit 
 	//MRU NOT NULL
 	//at least one element in the list
+	printf("cache not hit\n");
 	if (search == NULL) {
 		//search has no meaning from now on
 		buffer_structure* new_block = new_buffer_block(offset);
@@ -252,6 +261,7 @@ buffer_structure* ask_buffer_manager(int64_t offset) {
 
 		//remove into list
 		if (BUFFER_MANAGER->num_current_blocks == BUFFER_MANAGER->max_blocks) {
+			printf("buffer full : finding victom\n");
 			//buffer full. need victim
 			//find victim. need not but just implemented.
 			//victime은 LRU 부터 search
@@ -271,8 +281,10 @@ buffer_structure* ask_buffer_manager(int64_t offset) {
 		}
 		else {
 			//buffer not full
+			printf("buffer not full\n");
 			BUFFER_MANAGER->num_current_blocks++;
 		}
+		show_me_buffer();
 		return new_block;
 	}
 
@@ -284,16 +296,17 @@ void close_db(int table_id_) {
 	for (ptr = BUFFER_MANAGER->MRU; ptr != NULL; ptr = ptr->next) {
 		buffer_structure* current_block_ptr = ptr;
 		if (ptr->table_id == table_id_) {
-
+			printf("close_db : writing buffer to disk\n");
 			//unlink
 			if (current_block_ptr->prev == NULL)
 				BUFFER_MANAGER->MRU = current_block_ptr->next;
 			else
 				current_block_ptr->prev->next = current_block_ptr->next;
+
 			if (current_block_ptr->next == NULL)
 				BUFFER_MANAGER->LRU = current_block_ptr->prev;
 			else
-				current_block_ptr->prev->next = current_block_ptr->next;
+				current_block_ptr->next->prev = current_block_ptr->prev;
 
 			//update and then free heap
 			update(current_block_ptr);
@@ -308,7 +321,8 @@ void close_db(int table_id_) {
 
 void init_db(int buffer_size) {
 	//initialize BUFFER_MANAGER
-	BUFFER_MANAGER = (buffer_manager*) malloc(sizeof(buffer_manager));
+	printf("making buffer_manager\n");
+	BUFFER_MANAGER = new_buffer_manager(buffer_size);
 	BUFFER_MANAGER->max_blocks = buffer_size;
 	BUFFER_MANAGER->MRU = NULL;
 	BUFFER_MANAGER->LRU = NULL;
@@ -418,7 +432,7 @@ int coalesce_pages(buffer_structure* parent, buffer_structure* page, buffer_stru
 	delete_entry(parent, prime_key); //prime_key down.
 	memcpy(neighbor_page->frame + 12, &numKeys_neighbor, 4);
 	return_to_free_page(page);
-	return;
+	return 0;
 }
 
 
@@ -546,7 +560,7 @@ int delete_entry(buffer_structure* page, int64_t key) {
 
 	if (get_numKeys_of_page(page) >= min_keys) {
 		printf("delete finished (enough numKeys)\n");
-		return;
+		return 0;
 	}
 
 	//get parent of page
@@ -627,7 +641,7 @@ int remove_entry_from_page(buffer_structure* page, int64_t key) {
 	return 0;
 }
 
-void insert_into_node_after_splitting(buffer_structure* left, int left_index, int64_t new_key, buffer_structure* right) {
+void insert_into_node_after_splitting(buffer_structure* left, int left_index, int64_t new_key) {
 	//printf("inserting into new internal page.\n");
 	int split;
 	//get parent from right child.
@@ -750,10 +764,11 @@ void insert_into_parent(buffer_structure* left, buffer_structure* right, int64_t
 			break;
 
 	}
+
 	if (get_numKeys_of_page(parent) < get_order_of_current_page(parent) - 1)
 		insert_into_node(left_index, parent, new_key, right);
 	else 
-		insert_into_node_after_splitting(parent, left_index, new_key, right); 
+		insert_into_node_after_splitting(parent, left_index, new_key); 
 	
 	// #key already 248, become 249 then splitted #order = 249
 }
@@ -850,7 +865,7 @@ void insert_into_leaf(buffer_structure* leaf, int64_t key, char* value) {
 }
 
 int insert(int table_id, int64_t key, char* value) { //사실 root가 전역변수라서 return 해줘야 하는지도 모르겠다.
-	if (find(key) != 0) {
+	if (find(table_id,key) != 0) {
 		//printf("duplicate insert.\ntry again.\n");
 		return 0;
 	}
@@ -914,9 +929,9 @@ int get_order_of_current_page(buffer_structure* page) {
 	//internal : 249
 	//invariant : numKeys is 1-less than order
 	if (test_leaf(page))
-		return 32;
+		return 4;
 	else
-		return 249;
+		return 4;
 }
 
 buffer_structure* find_leaf(int64_t key) {
@@ -931,19 +946,29 @@ buffer_structure* find_leaf(int64_t key) {
 	buffer_structure* search = ask_buffer_manager(search_offset);
 	while (true) {//linear search
 		if (test_leaf(search)) {
+			printf("leaf found\n");
 			break;
 		}
+		
 		//not leaf
-		int number_of_keys;
-		memcpy(&number_of_keys, search->frame + 12, 2);
+		printf("enter internal page\n");
+		int number_of_keys; memcpy(&number_of_keys, search->frame + 12, 2);
+
 		int i = 0;
 		int64_t to_compare;
+
 		while (i < number_of_keys) {
+
 			memcpy(&to_compare, search->frame + header_page_size + i * 16, 8);
-			if (key >= to_compare) i++;
-			else break;
+			
+			if (key >= to_compare) 
+				i++;
+			else 
+				break;
+
 		}
-		memcpy(&search_offset, search->frame + 120 + 16 * i, 8);
+		memcpy(&search_offset
+			, search->frame + header_page_size - 8 + 16 * i, 8);
 		ask_buffer_manager(search_offset);
 	}
 	return search;
@@ -1064,6 +1089,17 @@ void make_header_page() {
 	make_free_page();
 }
 
+void show_me_buffer(){
+	buffer_structure* trace = BUFFER_MANAGER->MRU;
+	while(trace!=NULL){
+		printf("%8" PRId64" ",trace->page_offset);
+		trace = trace -> next;
+	}
+	printf("\n");
+	return;
+}
+
+
 int open_db(const char* pathname) {
 
 	//raise up header and then get root ( initially 0 )
@@ -1098,7 +1134,7 @@ int main(int argc, const char* argv[]) {
 	char command;
 	int64_t insert_key;
 	int opened = false;
-	printf("> ");
+
 	//make buffer
 	if (argc == 1) {
 		fprintf(stderr, "command line first argument error.\n");
@@ -1106,6 +1142,9 @@ int main(int argc, const char* argv[]) {
 		exit(EXIT_FAILURE);
 	}
 	init_db(atoi(argv[1]));
+
+	printf("> ");
+
 	//make buffer end
 	while (scanf("%c", &command) != EOF) {
 		switch (command) {
@@ -1127,6 +1166,7 @@ int main(int argc, const char* argv[]) {
 			display();
 			break;
 		case 'o':
+
 			printf("opening ");
 			if (fd != 0) close_db(table_count);
 			char absolute_path[200]; getcwd(absolute_path, 199);
@@ -1134,7 +1174,7 @@ int main(int argc, const char* argv[]) {
 			printf("%s/%s\n", absolute_path, path);
 			open_db(path); //설정 된후 계속 바뀔 것이다.
 			opened = true;
-			printf("table id : %d", get_table_id());
+			printf("table id : %d\n", get_table_id());
 			break;
 		case 'f':
 			scanf("%" PRId64, &insert_key);
