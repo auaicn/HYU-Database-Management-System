@@ -1,5 +1,5 @@
-//#ifndef __BPT_H__
-//#define __BPT_H__
+#ifndef __BPT_H__
+#define __BPT_H__
 
 #include <stdio.h>
 #include <string.h>
@@ -21,6 +21,7 @@ int fd; //initially 0
 char char_null[120];
 int64_t bit64_0;
 int table_count=1;
+buffer_manager* BUFFER_MANAGER;
 
 //struct declaration
 typedef struct entry ENTRY; //for queue used in display.
@@ -58,7 +59,8 @@ void insert_into_leaf_after_splitting(buffer_structure* left_offset, int64_t key
 void insert_into_parent(buffer_structure* left, buffer_structure* right, int64_t new_key);
 void insert_into_new_root(buffer_structure* left, int64_t key, buffer_structure* right); //have to return or change root
 void insert_into_node(int left_index, buffer_structure* parent, int64_t new_key, buffer_structure* right);
-void insert_into_node_after_splitting(buffer_structure* left, int left_index, int64_t new_key);
+void insert_into_node_after_splitting(buffer_structure* left, int left_index, int64_t new_key,buffer_structure
+	* right_child);
 
 //delete
 int delete_(int table_id, int64_t key);
@@ -116,7 +118,7 @@ buffer_manager* new_buffer_manager(int max_blocks) {
 }
 
 buffer_structure* new_buffer_block(int64_t offset) {
-	printf("making new block\n");
+	//printf("making new block\n");
 	buffer_structure* new_buffer = (buffer_structure*)malloc(sizeof(buffer_structure));
 	new_buffer->frame = (char*)malloc(page_size);
 	pread(fd, new_buffer->frame, 4096, offset);// pread only here
@@ -135,7 +137,7 @@ buffer_structure* new_buffer_block(int64_t offset) {
 //normal definitions
 
 void display() {
-
+	printf("------------------------display------------------------\n");
 	if (root == 0) {
 		printf("empty tree.\n");
 		return;
@@ -166,9 +168,10 @@ void display() {
 		//print key
 		int key_record_size_ = test_leaf(pos.page) ? 128 : 16;
 
-		printf("(p.%" PRId64")", pos.page->page_offset / 4096);
-		int i;
+		printf("(p%" PRId64")", pos.page->page_offset / 4096);
 		printf("| ");
+
+		int i;
 		int64_t temp;
 		for (i = 0; i<numChild; i++) {
 			memcpy(&temp, pos.page->frame + header_page_size + key_record_size_*i, 8);
@@ -177,7 +180,9 @@ void display() {
 
 		//enqueue others
 		//not for leaf
-		if (test_leaf(pos.page)) continue;
+		if (test_leaf(pos.page)) {
+			continue;
+		}
 		//for internal
 		for (i = 0; i<numChild + 1; i++) {
 			++queue_end;
@@ -199,7 +204,7 @@ int get_table_id() {
 
 
 buffer_structure* ask_buffer_manager(int64_t offset) {
-	printf("-------------asking for page %" PRId64" --------\n",offset/4096);
+	//printf("-------------asking for page %" PRId64" --------\n",offset/4096);
 	buffer_structure* search = BUFFER_MANAGER->MRU;
 	if (search == NULL) {
 		printf("MRU NULL -> first ask_buffer\n");
@@ -209,22 +214,22 @@ buffer_structure* ask_buffer_manager(int64_t offset) {
 		BUFFER_MANAGER->LRU = first_buffer_block;
 		first_buffer_block->next = NULL;
 		first_buffer_block->prev = NULL;
-		show_me_buffer();
+		//show_me_buffer();
 		return first_buffer_block;
 	}
 
 	//MRU NOT NULL
 	//at least one element in the list
-	printf("MRU NOT NULL -> searching page that has offset\n");
+	//printf("MRU NOT NULL -> searching page that has offset\n");
 	for (; search != NULL; search = search->next) {
 
 		if (!memcmp(&search->page_offset, &offset, 8)) {
-			printf("cache hit\n");
+			//printf("cache hit\n");
 			//cache hit search.offset == offset
 			//chacge location in list
 			//remove
 			if (BUFFER_MANAGER->MRU == search){
-				show_me_buffer();
+				//show_me_buffer();
 				return search;
 			}
 			if (search->next == NULL) {
@@ -241,7 +246,7 @@ buffer_structure* ask_buffer_manager(int64_t offset) {
 			search->prev = search->next->prev; //RVALUE is NULL
 			search->next->prev = search;
 			BUFFER_MANAGER->MRU = search;
-			show_me_buffer();
+			//show_me_buffer();
 
 			return search;
 		}
@@ -249,7 +254,7 @@ buffer_structure* ask_buffer_manager(int64_t offset) {
 	//cache not hit 
 	//MRU NOT NULL
 	//at least one element in the list
-	printf("cache not hit\n");
+	//printf("cache not hit\n");
 	if (search == NULL) {
 		//search has no meaning from now on
 		buffer_structure* new_block = new_buffer_block(offset);
@@ -260,7 +265,7 @@ buffer_structure* ask_buffer_manager(int64_t offset) {
 		BUFFER_MANAGER->MRU = new_block;
 
 		//remove into list
-		if (BUFFER_MANAGER->num_current_blocks == BUFFER_MANAGER->max_blocks) {
+		if (BUFFER_MANAGER->num_current_blocks-1 == BUFFER_MANAGER->max_blocks) {
 			printf("buffer full : finding victom\n");
 			//buffer full. need victim
 			//find victim. need not but just implemented.
@@ -274,17 +279,17 @@ buffer_structure* ask_buffer_manager(int64_t offset) {
 			BUFFER_MANAGER->LRU = victim->prev;
 			BUFFER_MANAGER->LRU->next = victim->next; //R VALUE is NULL
 
-													  //check victom
+			//check victom
 			if (victim->is_dirty == true) {
 				update(BUFFER_MANAGER->LRU); fdatasync(fd);
 			}
 		}
 		else {
 			//buffer not full
-			printf("buffer not full\n");
+			//printf("buffer not full\n");
 			BUFFER_MANAGER->num_current_blocks++;
 		}
-		show_me_buffer();
+		//show_me_buffer();
 		return new_block;
 	}
 
@@ -292,6 +297,7 @@ buffer_structure* ask_buffer_manager(int64_t offset) {
 
 
 void close_db(int table_id_) {
+	printf("current buffer_fill : %d\n",BUFFER_MANAGER->num_current_blocks);
 	buffer_structure* ptr;
 	for (ptr = BUFFER_MANAGER->MRU; ptr != NULL; ptr = ptr->next) {
 		buffer_structure* current_block_ptr = ptr;
@@ -311,25 +317,30 @@ void close_db(int table_id_) {
 			//update and then free heap
 			update(current_block_ptr);
 			free(current_block_ptr);
-			(BUFFER_MANAGER->num_current_blocks)--;
+			BUFFER_MANAGER->num_current_blocks--;
 		}
-
 	}
+
 	fdatasync(fd);
 	return;
+
 }
 
 void init_db(int buffer_size) {
+
 	//initialize BUFFER_MANAGER
 	printf("making buffer_manager\n");
 	BUFFER_MANAGER = new_buffer_manager(buffer_size);
 	BUFFER_MANAGER->max_blocks = buffer_size;
 	BUFFER_MANAGER->MRU = NULL;
 	BUFFER_MANAGER->LRU = NULL;
+
 }
 
 void update(buffer_structure* block) {
+	
 	pwrite(fd, block->frame, 4096, block->page_offset);
+
 }
 
 
@@ -641,45 +652,69 @@ int remove_entry_from_page(buffer_structure* page, int64_t key) {
 	return 0;
 }
 
-void insert_into_node_after_splitting(buffer_structure* left, int left_index, int64_t new_key) {
+void insert_into_node_after_splitting(buffer_structure* left, int left_index, int64_t new_key,buffer_structure* right_child) {
 	//printf("inserting into new internal page.\n");
 	int split;
 	//get parent from right child.
 	int order_ = get_order_of_current_page(left);
 	//make new internal page.
 	buffer_structure* right = make_internal_page();
-	//printf("new internal_page created : p.%" PRId64"\n", new_internal_page_offset/4096);
+	printf("new internal_page created : p.%" PRId64"\n", right->page_offset/4096);
 	char* temp = (char*)malloc(order_ * 16);
 
 	//copy to temp
 	memcpy(temp, left->frame + header_page_size, 16 * left_index);
 	memcpy(temp + left_index * 16, &new_key, 8);
-	memcpy(temp + left_index * 16 + 8, &right, 8);
+	memcpy(temp + left_index * 16 + 8, &right_child->page_offset, 8);
 	memcpy(temp + 16 * (left_index + 1)
 		, left->frame + header_page_size + 16 * left_index
 		, 16 * (order_ - 1 - left_index));
 
 	split = cut(order_);
+	printf("order_: %d\n",order_);
+	printf("split : %d\n",split);
 
 	//renew numKeys
-	int numKeys_left = split - 1; memcpy(left->frame + 12, &numKeys_left, 4);
-	int numKeys_right = order_ - (split - 1) - 1; memcpy(right->frame + 12, &numKeys_right, 4);
+	int numKeys_left = split;
+	memcpy(left->frame + 12, &numKeys_left, 4);
+
+	int numKeys_right = order_ - split - 1; 
+	memcpy(right->frame + 12, &numKeys_right, 4);
 	
 	memcpy(right->frame + header_page_size - 8
-		, temp + split * 16 - 8
-		, 16 * (order_ - split) + 8);
+		, temp + split * 16 + 8
+		, 16 * (order_ - split - 1) + 8);
 
 	//extract new_key
 	int64_t prime_key;
-	memcpy(&prime_key, left->frame + header_page_size + 16 * (split - 1), 8);
+	memcpy(&prime_key
+		, left->frame + header_page_size + 16 * split, 8);
 
 	//new_internal_page에 있는 child 들의 부모를 new_internal_page로 바꿔주어야 한다.
+	int k;
+	printf("numKeys_right : %d\n",numKeys_right);
+	for (k=0;k<numKeys_right*2+1;k++){
+		int64_t hello; memcpy(&hello,right->frame+header_page_size-8+8*k,8);
+		printf("%" PRId64"\n",hello);
+
+	}
+
 	int i;
 	for (i = 0; i < numKeys_right + 1; i++) {
 
-		int64_t child_offset; memcpy(&child_offset, right->frame + header_page_size - 8 + 16 * i, 8);
+		int64_t child_offset; 
+
+		memcpy(&child_offset
+			, right->frame + header_page_size - 8 + 16 * i, 8);
+
+		printf("%" PRId64"\n",child_offset/4096);
+
 		buffer_structure* child = ask_buffer_manager(child_offset);
-		memcpy(child->frame, &right->page_offset, 8);
+
+		memcpy(child->frame
+			, &right->page_offset
+			, 8);
+
 	}
 	
 	//set right's parent
@@ -687,7 +722,7 @@ void insert_into_node_after_splitting(buffer_structure* left, int left_index, in
 	memcpy(right->frame, &parent_of_left, 8);
 
 	free(temp);
-
+	//display();
 	insert_into_parent(left, right, prime_key);
 }
 
@@ -718,9 +753,9 @@ void insert_into_new_root(buffer_structure* left, int64_t key, buffer_structure*
 	buffer_structure* new_root = make_internal_page();
 	//renew number of keys
 	int number_of_keys;
-	memcpy(&number_of_keys, new_root->frame + 12, 4);
+	memcpy(&number_of_keys, new_root->frame + 12, 4); //now 0
 	number_of_keys++; 
-	memcpy(new_root->frame + 12, &number_of_keys, 4);
+	memcpy(new_root->frame + 12, &number_of_keys, 4); //now 1
 
 	//set parent offset to 0
 	memcpy(new_root->frame, &bit64_0, 8);
@@ -768,7 +803,7 @@ void insert_into_parent(buffer_structure* left, buffer_structure* right, int64_t
 	if (get_numKeys_of_page(parent) < get_order_of_current_page(parent) - 1)
 		insert_into_node(left_index, parent, new_key, right);
 	else 
-		insert_into_node_after_splitting(parent, left_index, new_key); 
+		insert_into_node_after_splitting(parent, left_index, new_key,right); 
 	
 	// #key already 248, become 249 then splitted #order = 249
 }
@@ -946,13 +981,13 @@ buffer_structure* find_leaf(int64_t key) {
 	buffer_structure* search = ask_buffer_manager(search_offset);
 	while (true) {//linear search
 		if (test_leaf(search)) {
-			printf("leaf found\n");
+			//printf("leaf found\n");
 			break;
 		}
-		
+
 		//not leaf
-		printf("enter internal page\n");
-		int number_of_keys; memcpy(&number_of_keys, search->frame + 12, 2);
+		//printf("enter internal page\n");
+		int number_of_keys; memcpy(&number_of_keys, search->frame + 12, 4);
 
 		int i = 0;
 		int64_t to_compare;
@@ -969,7 +1004,8 @@ buffer_structure* find_leaf(int64_t key) {
 		}
 		memcpy(&search_offset
 			, search->frame + header_page_size - 8 + 16 * i, 8);
-		ask_buffer_manager(search_offset);
+		//printf("search_offset : %" PRId64"\n",search_offset);
+		search = ask_buffer_manager(search_offset);
 	}
 	return search;
 }
@@ -1037,11 +1073,11 @@ buffer_structure* make_leaf_page() {
 buffer_structure* make_internal_page() {
 	//filling number of keys and is leaf
 	buffer_structure* free_page_list = ask_buffer_manager(FREE_PAGE_LIST_OFFSET);
+	int64_t new_internal_offset;
+	memcpy(&new_internal_offset, free_page_list->frame, 8);
+	printf("new_internal offset : %" PRId64"\n",new_internal_offset);
 
-	int64_t new_leaf_offset;
-	memcpy(&new_leaf_offset, free_page_list->frame, 8);
-
-	buffer_structure* new_internal = ask_buffer_manager(new_leaf_offset);
+	buffer_structure* new_internal = ask_buffer_manager(new_internal_offset);
 
 	//filling first 16 bytes of new_internal->frame
 	memcpy(new_internal->frame, &bit64_0, 8);
@@ -1092,7 +1128,7 @@ void make_header_page() {
 void show_me_buffer(){
 	buffer_structure* trace = BUFFER_MANAGER->MRU;
 	while(trace!=NULL){
-		printf("%8" PRId64" ",trace->page_offset);
+		printf("%3" PRId64" ",trace->page_offset/4096);
 		trace = trace -> next;
 	}
 	printf("\n");

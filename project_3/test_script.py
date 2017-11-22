@@ -47,8 +47,10 @@ def test_case(arr):
         p.stdin.flush()
 
     end = timer()
-            
+
     for i in arr:
+        p.stdout.flush()
+
         input_d = FIND_CMD_FMTS % (i)
         p.stdin.write(input_d.encode("utf-8"))
         p.stdin.flush()
@@ -58,6 +60,7 @@ def test_case(arr):
             succ += 1   
 
     p.stdin.write(QUIT_CMD_FMTS.encode('utf-8'))
+    p.stdin.flush()
     f.close()
 
     os.system("cp " + TARGET_DB_NAME + " " + LAST_TEST_DB_NAME)
@@ -72,6 +75,7 @@ def test_case_seq(casename, case_size):
     print(RESULT_FMTS % (result, case_size, float(result)/case_size * 100, elapse))
     if (result != case_size):
         print("FAILED - Stop Testing")
+        p.stdout.flush()
         exit()
     
     
@@ -114,6 +118,7 @@ def test_delete(remain_rec, delete_rec):
         input_d = FIND_CMD_FMTS % (i)
         f.write(input_d)
         p.stdin.write(input_d.encode("utf-8"))
+
         p.stdin.flush()
         result = p.stdout.readline().decode('utf-8').strip()
          
@@ -131,6 +136,7 @@ def test_delete(remain_rec, delete_rec):
             succ += 1   
 
     p.stdin.write(QUIT_CMD_FMTS.encode('utf-8'))
+    p.stdin.flush()
     f.close()
 
     return succ, end - start
