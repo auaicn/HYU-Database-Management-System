@@ -29,6 +29,8 @@ extern int table_count;
 extern buffer_manager* BUFFER_MANAGER;
 
 // utility
+int open_table(const char* path);
+void shutdown_db();
 int test_leaf(buffer_structure* block);
 int get_numKeys_of_page(buffer_structure* page);
 int page_key_record_size(buffer_structure* page);

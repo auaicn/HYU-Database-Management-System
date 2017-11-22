@@ -34,6 +34,18 @@ buffer_structure* new_buffer_block(int64_t offset) {
 
 //normal definitions
 
+void close_table(int table_id){
+	return close_db(table_id);
+}
+
+int open_table(const char* path){
+	return open_db(path);
+}
+
+void shutdown_db(){
+	close_db(table_count);
+}
+
 void display() {
 	printf("------------------------display------------------------\n");
 	if (root == 0) {
@@ -1042,7 +1054,7 @@ void show_me_buffer(){
 int open_db(const char* pathname) {
 
 	//raise up header and then get root ( initially 0 )
-	
+	table_count++;
 	FILE* fp;
 	if ((fp = fopen(pathname, "rb+")) == 0) { //not exists. then create
 		
@@ -1065,5 +1077,5 @@ int open_db(const char* pathname) {
 	int64_t root_page_offset; memcpy(&root_page_offset, header->frame + 8, 8);
 	printf("root_page offset : %" PRId64"\n", root_page_offset);
 	*/
-	return 0;
+	return table_count;
 }

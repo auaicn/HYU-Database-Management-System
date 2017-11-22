@@ -166,7 +166,7 @@ def test_delete_rev():
     print("Delete All Records Reversal")
     arr = list(range(LARGE_CASE))
     arr.reverse()
-
+    
     result, elapse = test_delete([], arr)
     print(RESULT_FMTS % (result, LARGE_CASE, float(result)/(LARGE_CASE) * 100, elapse))
     if (result != LARGE_CASE):
