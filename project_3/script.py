@@ -7,11 +7,11 @@
 from subprocess import Popen, PIPE
 import os
 from random import shuffle
-from timeit import default_timer as timer
+from timeit import default_timer as tiimer
 from math import log, floor
 from time import sleep
 
-INIT_CMD_FMTS = "n 300\n"
+INIT_CMD_FMTS = "n 20000\n"
 OPEN_CMD_FMTS = "o test.db\n"
 CLOSE_CMD_FMTS = "c 1\n"
 INSERT_CMD_FMTS = "i 1 %d %s\n"
