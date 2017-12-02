@@ -4,7 +4,6 @@ int main(int argc, const char* argv[]) {
 
 	int table_id;
 	int table2_id;
-	int size;
 	int64_t input;
 	char instruction;
 	char buf[120];
@@ -12,27 +11,30 @@ int main(int argc, const char* argv[]) {
 
 	// no special function in init()
 	// but for later implementation
-	init();
-
-	init_db(atoi(argv[1]));
+	
 	usage();
-	printf("%d is set as buffer_pool max size.\n",atoi(argv[1]));
+	init();
+	init_db(atoi(argv[1]));
+
 	printf("> ");
 	while (scanf("%c", &instruction) != EOF) {
 		switch (instruction) {
 		case 'c':
 			scanf("%d", &table_id);
 			close_table(table_id);
-			show_me_buffer();
 			break;
 		case 'd':
 			scanf("%d %ld", &table_id, &input);
 			delete(table_id, input);
+			display(table_id);
 			break;
 		case 'i':
 			scanf("%d %ld %s", &table_id, &input, buf);
 			if (insert(table_id, input, buf) == -1)
-				printf("following key is not existing in leaf page\n");
+				fprintf(stderr, "insertion error\n");
+			display(table_id);
+			printf("current_root_offset : %" PRId64"\n",current_root_offset);
+
 			break;
 		case 'f':
 			scanf("%d %ld", &table_id, &input);
@@ -53,12 +55,7 @@ int main(int argc, const char* argv[]) {
 		case 'j':
 			scanf("%d %d ", &table_id, &table2_id);
 			scanf("%s", path);
-			join(table_id, table2_id, path);
-			break;
-		case 'n':
-			scanf("%d", &size);
-			init_db(size);
-			printf("Buffer setted!\n");
+			join_table(table_id, table2_id, path);
 			break;
 		case 'o':
 			scanf("%s", path);
@@ -66,7 +63,7 @@ int main(int argc, const char* argv[]) {
 			printf("%s table ID is: %d\n", path, table_id);
 			break;
 		case 'p':
-			scanf("%d", table_id);
+			scanf("%d", &	table_id);
 			display(table_id);
 			break;
 		case 'q':
@@ -75,9 +72,15 @@ int main(int argc, const char* argv[]) {
 			printf("bye\n");
 			return 0;
 			break;
+		case 't':
+			show_tables();
+			break;
+		case 'b':
+			show_me_buffer();
+			break;
 		}
 		while (getchar() != (int)'\n');
-		//                printf("> ");
+		printf("> ");
 	}
 	printf("\n");
 

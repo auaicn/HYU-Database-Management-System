@@ -1,16 +1,15 @@
 #include "bpt.h"
 
-//utility
+/* global vars extern in bpt.h */
 char* null120;
-int64_t zero;
-
 int current_fd;
 int current_table_id;
 int64_t current_root_offset;
+int64_t zero;
+int table_create_count;
 
-//global var
 buffer_manager* BUFFER_MANAGER;
-table_manager* TABLE_MANAGER;		
+table_manager* TABLE_MANAGER;
 
 
 int64_t getter_internal_key(char* frame, int index) {
@@ -29,7 +28,7 @@ char* getter_leaf_value(char* frame, int index) {
 	return value;
 }
 
-int is_opened(int table_id) {
+table_structure* is_opened(int table_id) {
 
 	table_structure* search = TABLE_MANAGER->tables;
 
@@ -67,7 +66,7 @@ int join_table(int table1_id, int table2_id, const char* save_path) {
 	buffer_structure* table2_ptr;
 	int64_t next_offset;
 
-	table1_ptr = find_leaf(table1_id, _I64_MIN);
+	table1_ptr = find_leaf(table1_id, LONG_MIN);
 
 	//loop for [table1] times
 	while (table1_ptr != NULL) {
@@ -81,7 +80,7 @@ int join_table(int table1_id, int table2_id, const char* save_path) {
 			char* join_value = getter_leaf_value(table1_ptr->frame, i);
 			
 			//loop for [table2] times
-			table2_ptr = find_leaf(table2_id, _I64_MIN);
+			table2_ptr = find_leaf(table2_id, LONG_MIN);
 
 			while (table2_ptr != NULL) {
 
@@ -93,7 +92,7 @@ int join_table(int table1_id, int table2_id, const char* save_path) {
 					int64_t compare_key = getter_leaf_key(table2_ptr->frame, j);
 					if (join_key == compare_key) {
 						char* compare_value = getter_leaf_value(table1_ptr->frame, j);
-						fprintf(output, "%d,%s,%d,%s\n", join_key, join_value, compare_key, compare_value);
+						fprintf(output, "%" PRId64", %s, %" PRId64", %s\n", join_key, join_value, compare_key, compare_value);
 						free(compare_value);
 					}
 
@@ -112,7 +111,7 @@ int join_table(int table1_id, int table2_id, const char* save_path) {
 		/*From now on table1 may be victim.*/
 		memcpy(&next_offset, table1_ptr->frame + header_page_size - 8, 8);
 		table1_ptr->pin_count--;
-		table1_ptr = ask_buffer_manage(table1_id, next_offset);
+		table1_ptr = ask_buffer_manager(table1_id, next_offset);
 
 	}
 
@@ -121,26 +120,33 @@ int join_table(int table1_id, int table2_id, const char* save_path) {
 }
 
 //struct constructor
-buffer_manager* new_buffer_manager(int buffer_size) {
+void new_buffer_manager(int buffer_size) {
 
 	buffer_manager* new_buffer_manager_ = (buffer_manager*)malloc(sizeof(buffer_manager));
 
-	new_buffer_manager_->LRU = NULL;
-	new_buffer_manager_->MRU = NULL;
+
+	new_buffer_manager_->header = malloc(sizeof(buffer_structure));
+	new_buffer_manager_->header->next = NULL;
+	new_buffer_manager_->header->prev = NULL;
 
 	new_buffer_manager_->num_max_blocks = buffer_size;
 	new_buffer_manager_->num_current_blocks = 0;
 
-	return new_buffer_manager_;
+	BUFFER_MANAGER = new_buffer_manager_;
+
 }
 
 /* it needs table_id argument because it's used in ask_buffer call in join operation */
 buffer_structure* new_buffer_block(int table_id, int64_t offset) {
 
+	table_structure* table = get_table_structure(table_id);
+
 	buffer_structure* new_buffer = (buffer_structure*)malloc(sizeof(buffer_structure));
 	new_buffer->frame = (char*)malloc(page_size);
-	pread(current_fd, new_buffer->frame, 4096, offset);// pread only here
 
+	pread(table->fd, new_buffer->frame, page_size, offset);// pread only here
+
+	//for now....
 	new_buffer->next = NULL;
 	new_buffer->prev = NULL;
 
@@ -150,6 +156,7 @@ buffer_structure* new_buffer_block(int table_id, int64_t offset) {
 	new_buffer->page_offset = offset;
 
 	return new_buffer;
+
 }
 
 void new_table_manager()
@@ -164,6 +171,7 @@ void shutdown_db() {
 
 	table_structure* killer = TABLE_MANAGER->tables;
 	table_structure* killer_killer;
+
 	while (killer != NULL) {
 		killer_killer = killer;
 		close_table(killer->table_id);
@@ -178,7 +186,7 @@ void display(int table_id) {
 	printf("------------------------display------------------------\n");
 
 	buffer_structure* header = ask_buffer_manager(table_id, HEADER_PAGE_OFFSET);
-	int64_t root_offset; memcpy(&root_offset, header->frame, 8);
+	int64_t root_offset; memcpy(&root_offset, header->frame+8, 8);
 
 	//check empty
 	if (root_offset == 0) {
@@ -214,19 +222,20 @@ void display(int table_id) {
 			depth_by_now = pos.depth;
 		}
 
-		int numChild; memcpy(&numChild, pos.page->frame + 12, 4);
+		int numKeys; memcpy(&numKeys, pos.page->frame + 12, 4);
 		//print key
 		int leaf_key_record_size_ = test_leaf(pos.page) ? 128 : 16;
 
 		///print looking page
-		printf("(p%" PRId64")", pos.page->page_offset / 4096);
-		printf("| ");
+		printf("|(p%" PRId64") ", pos.page->page_offset / 4096);
 
 		int i;
 		int64_t temp;
 
-		for (i = 0; i < numChild; i++)
+		for (i = 0; i < numKeys; i++){
 			memcpy(&temp, pos.page->frame + header_page_size + leaf_key_record_size_*i, 8);
+			printf("%" PRId64" ",temp);
+		}
 
 		///enqueue others
 		//not for leaf
@@ -235,13 +244,14 @@ void display(int table_id) {
 		}
 
 		//for internal
-		for (i = 0; i<numChild + 1; i++) {
+		for (i = 0; i<numKeys + 1; i++) {
 			++queue_end;
 			memcpy(&temp, pos.page->frame + header_page_size - 8 + 16 * i, 8);
 			queue[queue_end].page = ask_buffer_manager(table_id, temp);
 			queue[queue_end].depth = pos.depth + 1;
 		}
 		pos.page->pin_count--;
+
 	}
 	printf("|\n");
 
@@ -252,17 +262,17 @@ void display(int table_id) {
 void bl_insert(buffer_structure* target,buffer_structure* prev_) {
 	
 	target->next = prev_->next;
-	target->prev = (prev_->next == NULL) || (prev_->next->prev == NULL) ? NULL : prev_;
+	target->prev = ((prev_->next == NULL) || (prev_->next->prev == NULL)) ? NULL : prev_;
 
-	(prev_->next == NULL ? BUFFER_MANAGER->LRU : prev_->next)->prev = target;
+	(prev_->next == NULL ? BUFFER_MANAGER->header : prev_->next)->prev = target;
 	prev_->next = target;
 
 }
 
 void bl_delete(buffer_structure* target) {
 
-	(target->next == NULL ? BUFFER_MANAGER->LRU : target->next)->prev = target->prev;
-	(target->prev == NULL ? BUFFER_MANAGER->MRU : target->prev)->next = target->next;
+	(target->next == NULL ? BUFFER_MANAGER->header : target->next)->prev = target->prev;
+	(target->prev == NULL ? BUFFER_MANAGER->header : target->prev)->next = target->next;
 
 }
 
@@ -270,20 +280,22 @@ void bl_delete(buffer_structure* target) {
 buffer_structure* ask_buffer_manager(int table_id, int64_t offset) {
 
 	//start from MRU
-	buffer_structure* search = BUFFER_MANAGER->MRU;
+	buffer_structure* search = BUFFER_MANAGER->header;
 	
 	//MRU NULL
-	if (search == NULL) {
+	if (search->next == NULL) {
 
 		buffer_structure* first_buffer_block = new_buffer_block(table_id, offset);
 
-		bl_insert(first_buffer_block,BUFFER_MANAGER->MRU);
+		bl_insert(first_buffer_block,BUFFER_MANAGER->header);
 		
 		BUFFER_MANAGER->num_current_blocks++;
 
-		printf("num_current_blocks changed to %d\n", BUFFER_MANAGER->num_current_blocks);
+		//printf("num_current_blocks changed to %d\n", BUFFER_MANAGER->num_current_blocks);
 		
+		//pin control
 		first_buffer_block->pin_count++;
+
 		return first_buffer_block;
 	}
 
@@ -291,12 +303,12 @@ buffer_structure* ask_buffer_manager(int table_id, int64_t offset) {
 	//at least one element in the list
 	for (; search != NULL; search = search->next) {
 
-		if (!memcmp(&search->page_offset, &offset, 8)) {
+		if (!memcmp(&search->page_offset, &offset, 8)&&table_id == search->table_id) {
 
 			//printf("cache hit\n");
 			
 			bl_delete(search);
-			bl_insert(search, BUFFER_MANAGER->MRU);
+			bl_insert(search, BUFFER_MANAGER->header);
 
 			search->pin_count++;
 			return search;
@@ -308,14 +320,15 @@ buffer_structure* ask_buffer_manager(int table_id, int64_t offset) {
 	//printf("cache not hit\n");
 	if (search == NULL) {
 		
-		buffer_structure* new_block = new_buffer_block(current_table_id,offset);
+		buffer_structure* new_block = new_buffer_block(table_id,offset);
 
-		bl_insert(new_block, BUFFER_MANAGER->MRU);
+		bl_insert(new_block, BUFFER_MANAGER->header);
 
 		if (BUFFER_MANAGER->num_current_blocks == BUFFER_MANAGER->num_max_blocks) {
 			//find victim. need not but just implemented.
 			//victime은 LRU 부터 search
-			buffer_structure* victim = BUFFER_MANAGER->LRU; //Never be NULL but it's prev can be NULL
+			buffer_structure* victim = BUFFER_MANAGER->header->prev; //Never be NULL but it's prev can be NULL
+			
 			while (victim->pin_count != 0 && victim != NULL)
 				victim = victim->prev;
 
@@ -347,7 +360,7 @@ buffer_structure* ask_buffer_manager(int table_id, int64_t offset) {
 void close_table(int table_id_) {
 
 	buffer_structure* ptr;
-	for (ptr = BUFFER_MANAGER->MRU; ptr != NULL; ptr = ptr->next) {
+	for (ptr = BUFFER_MANAGER->header->next; ptr != NULL; ptr = ptr->next) {
 
 		buffer_structure* current_block_ptr = ptr;
 
@@ -369,22 +382,23 @@ void close_table(int table_id_) {
 
 void show_tables()
 {
-	printf("%5s%5s %-50s\n","table_id","fd","path");
+	printf("%12s%5s %-50s\n","table_id","fd","path");
 	table_structure* search = TABLE_MANAGER->tables;
 	while (search != NULL) {
-		printf("%5d%5d %-50s\n", search->table_id, search->fd, search->path);
+		printf("%12d%5d %-50s\n", search->table_id, search->fd, search->path);
+		search = search->next;
 	}
 }
 
 void init_db(int buffer_size) {
 	
+	//initialize TABLE MANAGER
 	new_table_manager();
-	
-	//initialize BUFFER_MANAGER
-	BUFFER_MANAGER = new_buffer_manager(buffer_size);
-	BUFFER_MANAGER->num_max_blocks = buffer_size;
-	BUFFER_MANAGER->MRU = NULL;
-	BUFFER_MANAGER->LRU = NULL;
+
+	//initialize BUFFER_MANAGER and assign
+	new_buffer_manager(buffer_size);
+
+	printf("%d is set as buffer_pool max size.\n",buffer_size);
 
 }
 
@@ -395,7 +409,7 @@ free inside
 void update(buffer_structure* block) {
 
 	if (block->is_dirty)
-		pwrite(get_table_structure(block->table_id)->fd, block->frame, 4096, block->page_offset);
+		pwrite((get_table_structure(block->table_id))->fd, block->frame, 4096, block->page_offset);
 	free(block);
 
 }
@@ -1009,8 +1023,10 @@ int insert_into_leaf_after_splitting(buffer_structure* leaf, int64_t key, char* 
 	}
 
 	//Not exists
-	if (key != to_compare)
+	if (key == to_compare){
+		fprintf(stderr,"duplicate key\n");
 		return -1;
+	}
 
 	//copy to temp
 	memcpy(temp, leaf->frame + header_page_size, insertion_point*leaf_key_record_size);
@@ -1069,10 +1085,12 @@ int insert_into_leaf(buffer_structure* leaf, int64_t key, char* value) {
 
 	}
 
-	//Not Exists
-	if (to_compare != key)
+	//Exists
+	if (to_compare == key){
+		fprintf(stderr,"duplicate key\n");
 		return -1;
-
+	}
+	
 	int absolute_insertion_offset = header_page_size + insertion_point * 128;
 
 	memmove(leaf->frame + absolute_insertion_offset + 128,
@@ -1124,10 +1142,13 @@ int insert(int table_id, int64_t key, char* value) { //사실 root가 전역변�
 		new_root->pin_count--;
 
 		return 0;
+
 	}
 
 	//pin count handled later
 	buffer_structure* leaf = find_leaf(table_id, key);
+	if(leaf!=NULL) 
+		printf("leaf found\n");
 	
 	//get max number of keys of leaf page
 	int max_numKeys = get_order_of_current_page(leaf) - 1;
@@ -1173,9 +1194,9 @@ int get_order_of_current_page(buffer_structure* page) {
 	//internal : 249
 	//invariant : numKeys is 1-less than order
 	if (test_leaf(page))
-		return 32;
+		return 4;
 	else
-		return 249;
+		return 4;
 }
 
 buffer_structure* find_leaf(int table_id,int64_t key) {
@@ -1367,13 +1388,13 @@ void make_header_page() {
 }
 
 void show_me_buffer() {
-	buffer_structure* trace = BUFFER_MANAGER->MRU;
+	buffer_structure* trace = BUFFER_MANAGER->header->next;
 	while (trace != NULL) {
 
-		fprintf(stderr, "%3" PRId64" ", trace->page_offset / 4096);
+		fprintf(stderr, "|(T%d)%3" PRId64" ",trace->table_id, trace->page_offset / 4096);
 		trace = trace->next;
 	}
-	fprintf(stderr, "\n");
+	fprintf(stderr, "|\n");
 	return;
 }
 
@@ -1382,12 +1403,10 @@ int open_table(char* pathname) {
 
 	FILE* fp;
 	int fd;
-
 	//check if already opened before
 	table_structure* search = TABLE_MANAGER->tables;
 
 	while (search != NULL) {
-
 		//opened before
 		if (strcmp(pathname, search->path) == 0) {
 			current_table_id = search->table_id;
@@ -1400,10 +1419,10 @@ int open_table(char* pathname) {
 
 	//not opened before
 	fp = fopen(pathname, "w+");
-	current_table_id = ++table_create_count;
-	current_fd = filno(fp);
-	make_header_page(); 
 	
+	current_table_id = ++table_create_count;
+	current_fd = fileno(fp);
+
 	//initialize new_table_structure
 	table_structure* new_table_structure = (table_structure*)malloc(sizeof(table_structure));
 	
@@ -1414,6 +1433,8 @@ int open_table(char* pathname) {
 	//append to TABLE_MANAGER
 	new_table_structure->next = TABLE_MANAGER->tables;
 	TABLE_MANAGER->tables = new_table_structure;
+
+	make_header_page(); 
 
 	return new_table_structure->table_id;
 
@@ -1428,8 +1449,7 @@ table_structure* get_table_structure(int table_id) {
 			return t;
 		t = t->next;
 	}
-	fprintf(stderr, "get fd failed\n");
-
+	fprintf(stderr, "get table structure failed\n");
 	return NULL;
 
 }
@@ -1440,26 +1460,29 @@ void init() {
 }
 
 void usage() {
+	
 	printf("\n");
-	printf("!@#$ copyright and overview $#@!\n");
-	printf("copyright on https://hconnect.hanyang.ac.kr/2017_ITE2038_11735/2017_ITE2038_2016024811.git \n");
-	printf("code represents single-processed, disk-based b+tree implementation\n");
-	printf("\n");
-	printf("branch factor ( order )\n");
-	printf("leaf : 32 (numKeys will be 31)\n");
-	printf("internal : 249 (numKeys will be 248)\n");
-	printf("\n");
-	printf("code includes 'insert' 'delete' 'find' 'display-tree' 'join' and other operations\n");
-	printf("[Usage]\n");
-	printf("insert  :> i <table_id> <key> <value>\n");
-	printf("delete  :> d <table_id> <key>\n");
-	printf("find    :> f <table_id> <key>\n");
-	printf("display :> p <table_id>\n");
-	printf("quit    :> q\n");
-	printf("join    :> <table1_id> <table2_id> <save_path>\n");
-	printf("open table  :> o <path>\n");
-	printf("close table :> c <table_id>\n");
-	printf("usage again! :> u\n");
-	printf("buffer-display :> b \n");
-	printf("\n");
+	printf("+COPYRIGHT AND USAGE--------------------------------------------------------------------------\n");
+	printf("|copyright on https://hconnect.hanyang.ac.kr/2017_ITE2038_11735/2017_ITE2038_2016024811.git \n");
+	printf("|code represents single-processed, disk-based b+tree implementation\n");
+	printf("|\n");
+	printf("|branch factor ( order )\n");
+	printf("|leaf : 32 (numKeys will be 31)\n");
+	printf("|internal : 249 (numKeys will be 248)\n");
+	printf("|\n");
+	printf("|code includes 'insert' 'delete' 'find' 'display-tree' 'join' and other operations\n");
+	printf("|[Usage]\n");
+	printf("|insert  :> i <table_id> <key> <value>\n");
+	printf("|delete  :> d <table_id> <key>\n");
+	printf("|find    :> f <table_id> <key>\n");
+	printf("|display :> p <table_id>\n");
+	printf("|quit    :> q\n");
+	printf("|tables  :> t\n");
+	printf("|join    :> <table1_id> <table2_id> <save_path>\n");
+	printf("|open table  :> o <path>\n");
+	printf("|close table :> c <table_id>\n");
+	printf("|u|sage again! :> u\n");
+	printf("|buffer-display :> b \n");
+	printf("+---------------------------------------------------------------------------------------------\n");
+
 }

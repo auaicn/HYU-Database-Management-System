@@ -7,8 +7,8 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <cstring>
 #include <inttypes.h>
+#include <limits.h>
 
 #define true (1)
 #define false (0)
@@ -26,6 +26,7 @@ typedef struct buffer_manager buffer_manager;
 typedef struct table_structure table_structure;
 typedef struct table_manager table_manager;
 
+
 extern char* null120;
 extern int current_fd;
 extern int current_table_id;
@@ -39,9 +40,14 @@ extern table_manager* TABLE_MANAGER;
 
 //join operation
 int join_table(int table1_id, int table2_id, const char* save_path);
+table_structure* is_opened(int table_id);
 
 // utility
 void init();
+void usage();
+table_structure* get_table_structure(int table_id);
+
+
 void shutdown_db();
 int open_table(char* path);
 int test_leaf(buffer_structure* block);
@@ -81,10 +87,11 @@ int redistribute_pages(buffer_structure* parent, buffer_structure* page, buffer_
 int coalesce_pages(buffer_structure* parent, buffer_structure* page, buffer_structure* neighbor_page, int neighbor_index, int64_t prime_key);
 void display(int table_id);
 
-buffer_manager* new_buffer_manager(int max_blocks);
+void new_buffer_manager(int max_blocks);
 buffer_structure* new_buffer_block(int table_id, int64_t offset);
 void new_table_manager();
 
+void close_table(int table_id);
 void show_tables();
 void init_db(int buffer_size);
 void update(buffer_structure* block);
@@ -117,8 +124,7 @@ struct buffer_manager {
 	int num_current_blocks;
 	int num_max_blocks;
 
-	buffer_structure* MRU;
-	buffer_structure* LRU;
+	buffer_structure* header;
 
 };
 
@@ -128,7 +134,7 @@ struct table_structure
 	int fd;
 	int table_id;
 	char path[120];
-	int root_offset;
+	int64_t root_offset;
 
 	table_structure* next;
 
