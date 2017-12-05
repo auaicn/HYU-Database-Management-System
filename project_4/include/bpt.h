@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -59,7 +60,7 @@ void show_me_buffer();
 
 //buffer_manager functions
 void make_free_page();
-void make_header_page();
+void make_header_page(int table_id);
 buffer_structure* make_leaf_page();
 buffer_structure* make_internal_page();
 

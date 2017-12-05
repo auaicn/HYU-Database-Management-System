@@ -2,6 +2,11 @@
 
 int main(int argc, const char* argv[]) {
 
+	if (argc < 2){
+		fprintf(stderr,"give max buffer size as argument\n");
+		exit(EXIT_FAILURE);
+	}
+
 	int table_id;
 	int table2_id;
 	int64_t input;
@@ -30,11 +35,13 @@ int main(int argc, const char* argv[]) {
 			break;
 		case 'i':
 			scanf("%d %ld %s", &table_id, &input, buf);
+			fprintf(stdout,"inserting %ld\n",input);
 			if (insert(table_id, input, buf) == -1)
 				fprintf(stderr, "insertion error\n");
+			show_me_buffer();
 			display(table_id);
-			printf("current_root_offset : %" PRId64"\n",current_root_offset);
-
+			printf("num current blocks : %d\n",BUFFER_MANAGER->num_current_blocks);
+			printf("\n");
 			break;
 		case 'f':
 			scanf("%d %ld", &table_id, &input);
@@ -53,9 +60,9 @@ int main(int argc, const char* argv[]) {
 			usage();
 			break;
 		case 'j':
-			scanf("%d %d ", &table_id, &table2_id);
-			scanf("%s", path);
-			join_table(table_id, table2_id, path);
+			scanf("%d %d %s", &table_id, &table2_id,path);
+			if(join_table(table_id, table2_id, path)==-1)
+				fprintf(stderr,"join failed\n");
 			break;
 		case 'o':
 			scanf("%s", path);

@@ -32,9 +32,11 @@ table_structure* is_opened(int table_id) {
 
 	table_structure* search = TABLE_MANAGER->tables;
 
-	while (search) 
+	while (search!=NULL) 
 		if (search->table_id == table_id) 
 			break;
+		else
+			search = search->next;
 
 	return search;
 
@@ -42,8 +44,9 @@ table_structure* is_opened(int table_id) {
 
 int join_table(int table1_id, int table2_id, const char* save_path) {
 
+
 	// file open
-	if (!(is_opened(table1_id) && is_opened(table2_id))) {
+	if (is_opened(table1_id)==NULL || is_opened(table2_id)==NULL) {
 
 		fprintf(stderr, "cannot find matching table_id\n");
 		return -1;
@@ -58,19 +61,19 @@ int join_table(int table1_id, int table2_id, const char* save_path) {
 	}
 	
 	FILE* output = fopen(save_path, "w+");
-	
+
 	//joining R |><| S
-	
 	int i, j;
 	buffer_structure* table1_ptr;
 	buffer_structure* table2_ptr;
 	int64_t next_offset;
-
+	printf("first gyuri\n");
 	table1_ptr = find_leaf(table1_id, LONG_MIN);
+	printf("second seohyeon\n");
 
 	//loop for [table1] times
 	while (table1_ptr != NULL) {
-
+		
 		int numKeys_table1 = get_numKeys_of_page(table1_ptr);
 
 		//each key in a table1's block
@@ -81,36 +84,42 @@ int join_table(int table1_id, int table2_id, const char* save_path) {
 			
 			//loop for [table2] times
 			table2_ptr = find_leaf(table2_id, LONG_MIN);
-
 			while (table2_ptr != NULL) {
-
 				int numKeys_table2 = get_numKeys_of_page(table2_ptr);
 				//each key in a table2's block
 
 				for (j = 0; j < numKeys_table2; j++) {
-
 					int64_t compare_key = getter_leaf_key(table2_ptr->frame, j);
+
+					printf("%ld %ld\n",join_key,compare_key);
 					if (join_key == compare_key) {
-						char* compare_value = getter_leaf_value(table1_ptr->frame, j);
-						fprintf(output, "%" PRId64", %s, %" PRId64", %s\n", join_key, join_value, compare_key, compare_value);
-						free(compare_value);
+						char* value2 = getter_leaf_value(table1_ptr->frame, j);
+						
+						fprintf(output, "%" PRId64", %s, %" PRId64", %s\n", join_key, join_value, compare_key, value2);
+						fprintf(stderr, "%" PRId64", %s, %" PRId64", %s\n", join_key, join_value, compare_key, value2);
+						
+						free(value2);
 					}
 
 				}
 
 				memcpy(&next_offset, table2_ptr->frame + header_page_size - 8, 8);
 				table2_ptr->pin_count--;
+				
+				if (next_offset==0) break;
 				table2_ptr = ask_buffer_manager(table2_id,next_offset);
 
 			}
+
 			free(join_value);
 
 		}
-
 		//looking for next buffer block table1
 		/*From now on table1 may be victim.*/
 		memcpy(&next_offset, table1_ptr->frame + header_page_size - 8, 8);
 		table1_ptr->pin_count--;
+	
+		if (next_offset==0) break;
 		table1_ptr = ask_buffer_manager(table1_id, next_offset);
 
 	}
@@ -140,6 +149,12 @@ void new_buffer_manager(int buffer_size) {
 buffer_structure* new_buffer_block(int table_id, int64_t offset) {
 
 	table_structure* table = get_table_structure(table_id);
+
+	if(table==NULL){
+		fprintf(stderr,"new buffer block allocation failed\n");
+		return NULL;
+	}
+
 
 	buffer_structure* new_buffer = (buffer_structure*)malloc(sizeof(buffer_structure));
 	new_buffer->frame = (char*)malloc(page_size);
@@ -187,6 +202,8 @@ void display(int table_id) {
 
 	buffer_structure* header = ask_buffer_manager(table_id, HEADER_PAGE_OFFSET);
 	int64_t root_offset; memcpy(&root_offset, header->frame+8, 8);
+
+	printf("current root offset : %ld\n",root_offset/4096);
 
 	//check empty
 	if (root_offset == 0) {
@@ -240,6 +257,7 @@ void display(int table_id) {
 		///enqueue others
 		//not for leaf
 		if (test_leaf(pos.page)) {
+			pos.page->pin_count--;
 			continue;
 		}
 
@@ -333,7 +351,7 @@ buffer_structure* ask_buffer_manager(int table_id, int64_t offset) {
 				victim = victim->prev;
 
 			if (victim == NULL) {
-				fprintf(stderr, "searching one that has 0 pin_count failed\n");
+				fprintf(stderr, "pin dead lock\n");
 				exit(EXIT_FAILURE);
 			}
 
@@ -346,7 +364,7 @@ buffer_structure* ask_buffer_manager(int table_id, int64_t offset) {
 		else {
 
 			BUFFER_MANAGER->num_current_blocks++;
-			printf("num_current_blocks changed to %d\n", BUFFER_MANAGER->num_current_blocks);
+			//printf("num_current_blocks changed to %d\n", BUFFER_MANAGER->num_current_blocks);
 
 		}
 
@@ -802,14 +820,15 @@ int remove_entry_from_page(buffer_structure* page, int64_t key) {
 	return 0;
 }
 
-int insert_into_node_after_splitting(buffer_structure* left, int left_index, int64_t new_key, buffer_structure* right_child) {
+int insert_into_node_after_splitting(buffer_structure* left, int left_index
+	, int64_t new_key, buffer_structure* right_child) {
 	//printf("inserting into new internal page.\n");
 	int split;
 	//get parent from right child.
 	int order_ = get_order_of_current_page(left);
 	//make new internal page.
 	buffer_structure* right = make_internal_page();
-	//printf("new internal_page created : p.%" PRId64"\n", right->page_offset/4096);
+	printf("new internal_page created : p.%" PRId64"\n", right->page_offset/4096);
 	char* temp = (char*)malloc(order_ * 16);
 
 	//copy to temp
@@ -864,6 +883,8 @@ int insert_into_node_after_splitting(buffer_structure* left, int left_index, int
 		memcpy(child->frame
 			, &right->page_offset
 			, 8);
+
+		child->pin_count--;
 
 	}
 
@@ -960,11 +981,13 @@ int insert_into_parent(buffer_structure* left, buffer_structure* right, int64_t 
 	
 	//offset of parent
 	int64_t parent_offset; memcpy(&parent_offset, left->frame, 8);
-	buffer_structure* parent = ask_buffer_manager(current_table_id,parent_offset);
 
 	if (parent_offset == 0) {
 		return insert_into_new_root(left, new_key, right);
 	}
+
+	buffer_structure* parent = ask_buffer_manager(current_table_id,parent_offset);
+
 
 	//get parent's index that points left
 	int left_index = 0;
@@ -1004,7 +1027,7 @@ int insert_into_leaf_after_splitting(buffer_structure* leaf, int64_t key, char* 
 	int split = cut(order_);
 
 	buffer_structure* new_leaf = make_leaf_page();
-	
+
 	// new leaf parent control
 	memcpy(new_leaf->frame, leaf->frame, 8); 
 
@@ -1013,7 +1036,7 @@ int insert_into_leaf_after_splitting(buffer_structure* leaf, int64_t key, char* 
 	int64_t to_compare;
 	while (insertion_point < order_ - 1) {
 
-		getter_leaf_key(leaf->frame, insertion_point);
+		to_compare = getter_leaf_key(leaf->frame, insertion_point);
 
 		if (key > to_compare)
 			insertion_point++;
@@ -1025,6 +1048,7 @@ int insert_into_leaf_after_splitting(buffer_structure* leaf, int64_t key, char* 
 	//Not exists
 	if (key == to_compare){
 		fprintf(stderr,"duplicate key\n");
+		free(temp);
 		return -1;
 	}
 
@@ -1087,10 +1111,11 @@ int insert_into_leaf(buffer_structure* leaf, int64_t key, char* value) {
 
 	//Exists
 	if (to_compare == key){
+		leaf->pin_count--;
 		fprintf(stderr,"duplicate key\n");
 		return -1;
 	}
-	
+
 	int absolute_insertion_offset = header_page_size + insertion_point * 128;
 
 	memmove(leaf->frame + absolute_insertion_offset + 128,
@@ -1115,11 +1140,13 @@ int insert_into_leaf(buffer_structure* leaf, int64_t key, char* value) {
 
 int insert(int table_id, int64_t key, char* value) { //사실 root가 전역변수라서 return 해줘야 하는지도 모르겠다.
 	
-	if (current_root_offset == 0) {
+	buffer_structure* header_page = ask_buffer_manager(table_id,HEADER_PAGE_OFFSET);
+	int64_t root_offset; memcpy(&root_offset, header_page->frame + 8, 8);
+
+	if (root_offset == 0) {
 		// create tree
 
 		buffer_structure* new_root = make_leaf_page();
-		buffer_structure* header_page = ask_buffer_manager(current_table_id,HEADER_PAGE_OFFSET);
 
 		// register new_root_offset into header_page
 		memcpy(header_page->frame + 8, &new_root->page_offset, 8);
@@ -1137,6 +1164,8 @@ int insert(int table_id, int64_t key, char* value) { //사실 root가 전역변�
 		//set global variable
 		current_root_offset = new_root->page_offset;
 
+		new_root->is_dirty=true;
+
 		//victim available
 		header_page->pin_count--;
 		new_root->pin_count--;
@@ -1145,10 +1174,18 @@ int insert(int table_id, int64_t key, char* value) { //사실 root가 전역변�
 
 	}
 
+	header_page->pin_count--;
+
 	//pin count handled later
 	buffer_structure* leaf = find_leaf(table_id, key);
-	if(leaf!=NULL) 
-		printf("leaf found\n");
+
+	//to erase
+	fprintf(stdout,"leaf offset : %ld\n",leaf->page_offset/4096);
+
+	if(leaf==NULL) {
+		fprintf(stderr,"insertion error\n");
+		return -1;
+	}
 	
 	//get max number of keys of leaf page
 	int max_numKeys = get_order_of_current_page(leaf) - 1;
@@ -1302,6 +1339,8 @@ buffer_structure* make_leaf_page() {
 
 	buffer_structure* new_leaf = ask_buffer_manager(current_table_id, new_leaf_offset);
 
+	printf("making leaf page : no.%ld\n",new_leaf->page_offset/4096);
+
 	//filling first 16 bytes of new_leaf->frame
 	memcpy(new_leaf->frame, &zero, 8);
 	int leaf_ = 1;
@@ -1312,6 +1351,7 @@ buffer_structure* make_leaf_page() {
 	make_free_page(current_table_id);
 
 	//header not changed so need not make header dirty
+	new_leaf->is_dirty = true;
 
 	header->pin_count--;
 
@@ -1325,10 +1365,11 @@ buffer_structure* make_internal_page() {
 
 	int64_t new_internal_offset;
 	memcpy(&new_internal_offset, header->frame, 8);
-	//printf("new_internal offset : %" PRId64"\n",new_internal_offset);
 
 	buffer_structure* new_internal = ask_buffer_manager(current_table_id, new_internal_offset);
 
+	printf("making internal page : no.%ld\n",new_internal->page_offset/4096);
+	
 	//filling first 16 bytes of new_internal->frame
 	memcpy(new_internal->frame, &zero, 8);
 	int leaf_ = 0;
@@ -1338,6 +1379,8 @@ buffer_structure* make_internal_page() {
 
 	make_free_page();
 
+
+	new_internal->is_dirty = true;
 	//header not changed so need not make header dirty
 
 	header->pin_count--;
@@ -1372,11 +1415,11 @@ void make_free_page() {
 	return;
 }
 
-void make_header_page() {
+void make_header_page(int table_id) {
 
 	int64_t number_of_page = 1;
 
-	buffer_structure* new_header = ask_buffer_manager(current_table_id, HEADER_PAGE_OFFSET);
+	buffer_structure* new_header = ask_buffer_manager(table_id, HEADER_PAGE_OFFSET);
 
 	memcpy(new_header->frame, &zero, 8);
 	memcpy(new_header->frame + 8, &zero, 8);
@@ -1391,7 +1434,7 @@ void show_me_buffer() {
 	buffer_structure* trace = BUFFER_MANAGER->header->next;
 	while (trace != NULL) {
 
-		fprintf(stderr, "|(T%d)%3" PRId64" ",trace->table_id, trace->page_offset / 4096);
+		fprintf(stderr, "|T%d p%ld (%d)", trace->table_id,trace->page_offset / 4096,trace->pin_count);
 		trace = trace->next;
 	}
 	fprintf(stderr, "|\n");
@@ -1411,19 +1454,44 @@ int open_table(char* pathname) {
 		if (strcmp(pathname, search->path) == 0) {
 			current_table_id = search->table_id;
 			current_fd = search->fd;
+			buffer_structure* header = ask_buffer_manager(search->table_id,HEADER_PAGE_OFFSET);
+			memcpy(&current_root_offset,header->frame+8,8);
+			header->pin_count--;
 			return search->table_id;
 		}
 		search = search->next;
 
 	}
 
+	int there_is_no_file = true;
+	//check if path is already occupied
+
+	if (access(pathname,F_OK)==-1){
+
+		//file not exists
+		fprintf(stderr,"file open fail so make new file : %s\n",strerror(errno));
+		fp = fopen(pathname, "w+");
+
+	}else{
+
+		//file already exists
+		//make table structure
+		there_is_no_file = false;
+
+		//do not truncate
+		fp = fopen(pathname,"r+");
+
+	}
+
+	//only know fp
 	//not opened before
-	fp = fopen(pathname, "w+");
 	
+	//get table_id 
+	//and fd from fd
 	current_table_id = ++table_create_count;
 	current_fd = fileno(fp);
 
-	//initialize new_table_structure
+	//make and initialize new_table_structure
 	table_structure* new_table_structure = (table_structure*)malloc(sizeof(table_structure));
 	
 	new_table_structure->fd = current_fd;
@@ -1434,7 +1502,14 @@ int open_table(char* pathname) {
 	new_table_structure->next = TABLE_MANAGER->tables;
 	TABLE_MANAGER->tables = new_table_structure;
 
-	make_header_page(); 
+	if (there_is_no_file)
+		make_header_page(new_table_structure->table_id);
+
+	//set current root offset
+	buffer_structure* header = ask_buffer_manager(new_table_structure->table_id,HEADER_PAGE_OFFSET);
+	memcpy(&new_table_structure->root_offset, header->frame+8, 8);
+	memcpy(&current_root_offset,header->frame+8,8);
+	header->pin_count--;
 
 	return new_table_structure->table_id;
 
