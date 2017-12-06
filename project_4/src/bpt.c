@@ -45,6 +45,7 @@ table_structure* is_opened(int table_id) {
 int join_table(int table1_id, int table2_id, const char* save_path) {
 
 
+	//char buf[page_size*10];
 	// file open
 	if (is_opened(table1_id)==NULL || is_opened(table2_id)==NULL) {
 
@@ -61,15 +62,14 @@ int join_table(int table1_id, int table2_id, const char* save_path) {
 	}
 	
 	FILE* output = fopen(save_path, "w+");
-
+	setvbuf(output,NULL,_IOFBF,page_size*1000);
 	//joining R |><| S
 	int i, j;
 	buffer_structure* table1_ptr;
 	buffer_structure* table2_ptr;
 	int64_t next_offset;
-	printf("first gyuri\n");
 	table1_ptr = find_leaf(table1_id, LONG_MIN);
-	printf("second seohyeon\n");
+
 
 	//loop for [table1] times
 	while (table1_ptr != NULL) {
@@ -81,9 +81,11 @@ int join_table(int table1_id, int table2_id, const char* save_path) {
 
 			int64_t join_key = getter_leaf_key(table1_ptr->frame, i);
 			char* join_value = getter_leaf_value(table1_ptr->frame, i);
-			
+
+			printf("%ld\n",join_key);
 			//loop for [table2] times
 			table2_ptr = find_leaf(table2_id, LONG_MIN);
+
 			while (table2_ptr != NULL) {
 				int numKeys_table2 = get_numKeys_of_page(table2_ptr);
 				//each key in a table2's block
@@ -91,14 +93,14 @@ int join_table(int table1_id, int table2_id, const char* save_path) {
 				for (j = 0; j < numKeys_table2; j++) {
 					int64_t compare_key = getter_leaf_key(table2_ptr->frame, j);
 
-					printf("%ld %ld\n",join_key,compare_key);
 					if (join_key == compare_key) {
+
 						char* value2 = getter_leaf_value(table1_ptr->frame, j);
-						
+
 						fprintf(output, "%" PRId64", %s, %" PRId64", %s\n", join_key, join_value, compare_key, value2);
-						fprintf(stderr, "%" PRId64", %s, %" PRId64", %s\n", join_key, join_value, compare_key, value2);
 						
 						free(value2);
+
 					}
 
 				}
@@ -123,6 +125,8 @@ int join_table(int table1_id, int table2_id, const char* save_path) {
 		table1_ptr = ask_buffer_manager(table1_id, next_offset);
 
 	}
+
+	fclose(output);
 
 	printf("check explicitly if file %s is in working directory!\n", save_path);
 
@@ -357,9 +361,7 @@ buffer_structure* ask_buffer_manager(int table_id, int64_t offset) {
 
 			bl_delete(victim);
 			
-			if (victim->is_dirty == true) {
-				update(victim);
-			}
+			update(victim);
 		}
 		else {
 
@@ -428,6 +430,7 @@ void update(buffer_structure* block) {
 
 	if (block->is_dirty)
 		pwrite((get_table_structure(block->table_id))->fd, block->frame, 4096, block->page_offset);
+
 	free(block);
 
 }
@@ -1231,9 +1234,9 @@ int get_order_of_current_page(buffer_structure* page) {
 	//internal : 249
 	//invariant : numKeys is 1-less than order
 	if (test_leaf(page))
-		return 4;
+		return 32;
 	else
-		return 4;
+		return 249;
 }
 
 buffer_structure* find_leaf(int table_id,int64_t key) {
