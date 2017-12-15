@@ -14,11 +14,37 @@
 #define true (1)
 #define false (0)
 
+#define PageLSNAbsoluteOffset (24)
 #define page_size (4096)
 #define header_page_size (128)
 #define internal_key_pointer_size (16)
 #define leaf_key_record_size (128)
 #define HEADER_PAGE_OFFSET (0)
+
+#define BEGIN 0
+#define UPDATE 1
+#define COMMIT 2
+#define ABORT 3
+#define CLR 4
+
+//set by new_log_system_object
+#define LSN 0
+#define Prev_LSN 8
+#define transaction_ID 16
+
+//set by each function
+#define Type 20
+
+//set only by update()
+#define Table_ID 24
+#define Page_Number 28
+#define OFFSET 32
+#define Data_Length 36
+#define Old_Image 40
+#define New_Image 160
+
+#define Page_LSN 24
+#define LOG_SIZE 300
 
 //struct declaration
 typedef struct entry ENTRY; //for queue used in display.
@@ -26,28 +52,57 @@ typedef struct buffer_structure buffer_structure;
 typedef struct buffer_manager buffer_manager;
 typedef struct table_structure table_structure;
 typedef struct table_manager table_manager;
+typedef struct log_system_object log_system_object;
+typedef struct log_manager log_manager;
+typedef struct transactional_unit transactional_unit;
 
-
+//global vars
 extern char* null120;
 extern int current_fd;
 extern int current_table_id;
 extern int64_t current_root_offset;
 extern int64_t zero;
 extern int table_create_count;
+extern int transaction_count;
 
 extern buffer_manager* BUFFER_MANAGER;
 extern table_manager* TABLE_MANAGER;
+extern log_manager* LOG_MANAGER;
 
+//project recovery interface
+
+transactional_unit* new_transactional_unit();
+log_system_object* new_log_system_object();
+void new_log_manager();
+
+int flush_transaction();
+int remove_transaction();
+
+
+int display_current_transaction_log_on_memory();
+void recovery();
+void append_log_structure(log_system_object* to_append);
+int begin_transaction();
+int commit_transaction();
+int abort_transaction();
+int update(int table_id, int64_t key, char* value);
+
+//changed interface
+void flush_page(buffer_structure* block);
+buffer_structure* fetch(int table_id, int64_t offset);
 
 //join operation
 int join_table(int table1_id, int table2_id, const char* save_path);
 table_structure* is_opened(int table_id);
 
+//utility for recovery
+int64_t getter_log_value_8byte(log_system_object* single_log,int offset);
+int getter_log_value_4byte(log_system_object* single_log,int offset);
+
 // utility
 void init();
 void usage();
 table_structure* get_table_structure(int table_id);
-
 
 void shutdown_db();
 int open_table(char* path);
@@ -57,6 +112,12 @@ int page_key_record_size(buffer_structure* page);
 int get_order_of_current_page(buffer_structure* page);
 int cut(int length);
 void show_me_buffer();
+int64_t getter_internal_key(char* frame, int index);
+int64_t getter_leaf_key(char* frame, int index);
+char* getter_leaf_value(char* frame, int index);
+
+
+
 
 //buffer_manager functions
 void make_free_page();
@@ -95,13 +156,32 @@ void new_table_manager();
 void close_table(int table_id);
 void show_tables();
 void init_db(int buffer_size);
-void update(buffer_structure* block);
 void bl_delete(buffer_structure * target);
-buffer_structure* ask_buffer_manager(int table_id, int64_t offset);
 
-//struct definition
+/*struct definition*/
+
+struct log_manager {
+	int64_t flushed_LSN;
+	int64_t lastLSN;
+	FILE* log_file;
+	//initialized by new_log_manager (that is called in init_db())
+	transactional_unit* current_transaction;
+};
+
+struct transactional_unit {
+	log_system_object* begin;
+	int XID;
+};
+
+//it indicates log object on memory
+//volatile
+struct log_system_object {
+	char* frame;
+	log_system_object* next;
+	log_system_object* prev;
+};
+
 struct entry {
-
 	buffer_structure* page;
 	int depth;
 
@@ -110,10 +190,12 @@ struct entry {
 struct buffer_structure {
 	
 	char * frame;
+	//24-32 PAGE LSN
 	int table_id;
 	int is_dirty;
 	int pin_count;
 	int64_t page_offset;
+	int64_t page_LSN;
 
 	buffer_structure* next;
 	buffer_structure* prev;

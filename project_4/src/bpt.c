@@ -272,6 +272,7 @@ void display(int table_id) {
 			queue[queue_end].page = ask_buffer_manager(table_id, temp);
 			queue[queue_end].depth = pos.depth + 1;
 		}
+		
 		pos.page->pin_count--;
 
 	}
