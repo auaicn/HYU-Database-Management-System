@@ -35,27 +35,27 @@ int display_current_transaction_log_on_memory()
 	table[4][4] = '\0';
 	table[5][4] = '\0';
 	table[6][4] = '\0';
-	table[7][4] = '\0';
+
 	while (looking_log) {
+		printf("looking log\n");
 		int temp4; 
 		int64_t temp8;
 		temp8= getter_log_value_8byte(looking_log, LSN); 
 		memcpy(table[0], &temp8, 8);
 		temp8 = getter_log_value_8byte(looking_log, Prev_LSN);
 		memcpy(table[1], &temp8, 8);
+		
 		temp4 = getter_log_value_4byte(looking_log, transaction_ID);
 		memcpy(table[2], &temp4, 4);
 		temp4 = getter_log_value_4byte(looking_log, Type);
-		memcpy(table[2], &temp4, 4);
+		memcpy(table[3], &temp4, 4);
 		temp4 = getter_log_value_4byte(looking_log, Table_ID);
-		memcpy(table[2], &temp4, 4);
+		memcpy(table[4], &temp4, 4);
 		temp4 = getter_log_value_4byte(looking_log, Page_Number);
-		memcpy(table[2], &temp4, 4);
+		memcpy(table[5], &temp4, 4);
 		temp4 = getter_log_value_4byte(looking_log, OFFSET);
-		memcpy(table[2], &temp4, 4);
-		temp4 = getter_log_value_4byte(looking_log, Data_Length);
-		memcpy(table[2], &temp4, 4);
-		for (int i = 0; i < 8; i++) {
+		memcpy(table[6], &temp4, 4);
+		for (int i = 0; i < 7; i++) {
 			printf("%s\n", table[i]);
 		}
 		printf("\n");
@@ -209,7 +209,6 @@ int begin_transaction() {
 	new_transactional_unit();
 	printf("hello\n");
 	append_to_transaction(new_log(BEGIN));
-	printf("auaicn\n");
 	return 0;
 }
 
