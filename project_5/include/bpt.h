@@ -1,6 +1,5 @@
-#pragma once
-#ifndef __BPT_H__
-#define __BPT_H__
+#ifndef __BPT_H__ 
+#define __BPT_H__ 
 
 #include <stdio.h>
 #include <string.h>
@@ -21,11 +20,11 @@
 #define leaf_key_record_size (128)
 #define HEADER_PAGE_OFFSET (0)
 
-#define BEGIN 0
-#define UPDATE 1
-#define COMMIT 2
-#define ABORT 3
-#define CLR 4
+#define BEGIN (int) 0
+#define UPDATE (int) 1
+#define COMMIT (int) 2 
+#define ABORT (int) 3
+#define CLR (int) 4
 
 //set by append_to_transaction()
 #define LSN 0

@@ -79,6 +79,11 @@ void recovery()
 		//fetch needed page.
 		//check if pageLSN is bigger than current looking flushedLSN.
 		log* log = read_one_log();
+		printf("read_one_log finished\n");
+		if(log==NULL){
+			fprintf(stderr,"EOF reached\n");
+			break;
+		}
 		int type; memcpy(&type, log->frame + Type, 4);
 		switch (type) {
 		case BEGIN:
@@ -202,7 +207,9 @@ void recovery()
 //0
 int begin_transaction() {
 	new_transactional_unit();
+	printf("hello\n");
 	append_to_transaction(new_log(BEGIN));
+	printf("auaicn\n");
 	return 0;
 }
 
@@ -263,32 +270,33 @@ void new_transactional_unit()
 	empty_transaction->begin = NULL;
 	empty_transaction->end = NULL;
 	empty_transaction->lastLSN = LOG_MANAGER->flushed_LSN; //initially 0
-	empty_transaction->XID = transaction_count++;
+	empty_transaction->XID = transaction_count++; //start from 1
 	printf("empty transaction with XID : %d made\n", empty_transaction->XID);
 	LOG_MANAGER->current_transaction = empty_transaction;
-};
+}
 
 log* new_log(int type) {
-	log* new_log = (log*)malloc(sizeof(log));
-	memcpy(new_log->frame + Type, &type, 4);
-	return new_log;
+	log* new_log_ = (log*)malloc(sizeof(log));
+	new_log_->frame = (char*)malloc(sizeof(char)*LOG_SIZE);
+	memcpy(new_log_->frame + Type, &type, 4);
+	return new_log_;
 }
 
 void new_log_manager()
 {
-
+	LOG_MANAGER = (log_manager*) malloc (sizeof(log_manager));
 	LOG_MANAGER->current_transaction == NULL;
 	char* pathname = "log.txt";
 	if (access(pathname, F_OK) == -1) {
 		//not accessable
+		need_recovery = false;
 		fprintf(stderr, "there is no log file. making \"log.txt in current directory\"\n");
 		LOG_MANAGER->log_file = fopen(pathname, "w+");
 	}
 	else {
-		need_recovery = false;
 		fprintf(stderr, "there exists log file\n");
-		fprintf(stderr, "opening log.txt");
-		LOG_MANAGER->log_file = fopen("log.txt","r+");
+		fprintf(stderr, "opening log.txt\n");
+		LOG_MANAGER->log_file = fopen(pathname,"r+");
 	}
 	LOG_MANAGER->flushed_LSN = 0;
 
@@ -296,8 +304,17 @@ void new_log_manager()
 
 int flush_transaction()
 {
+	printf("flushing transaction\n");
 	transactional_unit* to_flush = LOG_MANAGER->current_transaction;
+	if(to_flush==NULL){
+		printf("there's no transaction\n");
+		return 0;
+	}
 	log* begin = to_flush->begin;
+	if(begin==NULL){
+		printf("there's no begin log\n");
+		return 0;
+	}
 	while (begin) {
 		//victim 되어서 내려가는 거라면 LSN 상관없이 내려야하는데?
 		//그럼에도 불구하고 log flush는 그대로인걸?
@@ -387,7 +404,7 @@ int update(int table_id, int64_t key, char* new_value) {
 	if (current_LSN > old_pageLSN);
 		memcpy(target_page->frame + PAGE_LSN, &current_LSN, 8);
 
-	//append redo log into current trasaction
+	//append redo log into current transaction
 	append_to_transaction(new_log_);
 
 	//write to buffer 
@@ -400,14 +417,16 @@ int update(int table_id, int64_t key, char* new_value) {
 
 void append_to_transaction(log* new_log) {
 	
+	printf("initialize first and then\n");
+	printf("appending to current transaction\n");
+
 	//transaction has doublely linked list set
 	memcpy(new_log->frame + transaction_ID, &(LOG_MANAGER->current_transaction->XID), 4);
 	memcpy(new_log->frame + Prev_LSN, &(LOG_MANAGER->current_transaction->lastLSN), 8);
 	LOG_MANAGER->current_transaction->lastLSN += LOG_SIZE;
 	memcpy(new_log->frame + LSN, &(LOG_MANAGER->current_transaction->lastLSN), 8);
 
-	printf("appending to current transaction\n");
-	printf("current lastLSN in trasactional unit : %ld\n", LOG_MANAGER->current_transaction->lastLSN);
+	printf("current lastLSN in transactional unit : %ld\n", LOG_MANAGER->current_transaction->lastLSN);
 	log* search = LOG_MANAGER->current_transaction->begin;
 	if (search == NULL){
 		new_log->next = NULL;
@@ -511,7 +530,7 @@ int open_table(char* pathname) {
 	memcpy(&current_root_offset, header->frame + 8, 8);
 	header->pin_count--;
 	
-	
+	printf("new table created : it's table id is %d\n",new_table_structure->table_id);
 	return new_table_structure->table_id;
 
 }
@@ -820,7 +839,11 @@ buffer_structure* fetch(int table_id, int64_t offset) {
 	if (search->next == NULL) {
 
 		buffer_structure* first_buffer_block = new_buffer_block(table_id, offset);
-
+		
+		if(first_buffer_block==NULL){
+			fprintf(stderr,"fetch fail");
+			return NULL;
+		}
 		bl_insert(first_buffer_block, BUFFER_MANAGER->header);
 
 		BUFFER_MANAGER->num_current_blocks++;
@@ -856,6 +879,10 @@ buffer_structure* fetch(int table_id, int64_t offset) {
 
 		buffer_structure* new_block = new_buffer_block(table_id, offset);
 
+		if(new_block == NULL){
+			fprintf(stderr,"fetch fail");
+			return NULL;
+		}
 		bl_insert(new_block, BUFFER_MANAGER->header);
 
 		if (BUFFER_MANAGER->num_current_blocks == BUFFER_MANAGER->num_max_blocks) {
@@ -971,8 +998,10 @@ void flush_page(buffer_structure* block) {
 	//but we are not removing log from memory because they can be aborted.
 	flush_transaction();
 
-	if (block->is_dirty)
+	if (block->is_dirty){
+		printf("dirty page disk write\n");
 		pwrite((get_table_structure(block->table_id))->fd, block->frame, 4096, block->page_offset);
+	}
 
 	free(block);
 
@@ -2018,7 +2047,7 @@ table_structure* get_table_structure_by_name(char* pathname) {
 			return t;
 		t = t->next;
 	}
-	fprintf(stderr, "get table structure failed\n");
+	fprintf(stderr, "get table structure by name failed\n");
 	return NULL;
 }
 
@@ -2037,6 +2066,7 @@ table_structure* get_table_structure(int table_id) {
 }
 
 void init() {
+	transaction_count = 1;
 	need_recovery = true;
 	null120 = (char*)calloc(120, sizeof(char));
 	return;
@@ -2048,17 +2078,15 @@ void usage() {
 	printf("+COPYRIGHT AND USAGE--------------------------------------------------------------------------\n");
 	printf("|copyright on https://hconnect.hanyang.ac.kr/2017_ITE2038_11735/2017_ITE2038_2016024811.git \n");
 	printf("|code represents single-processed, disk-based b+tree implementation\n");
-	printf("|\n");
 	printf("|branch factor ( order )\n");
 	printf("|leaf : 32 (numKeys will be 31)\n");
 	printf("|internal : 249 (numKeys will be 248)\n");
-	printf("|\n");
 	printf("|[Usage]\n");
 	printf("|insert  :> i <table_id> <key> <value>\n");
 	printf("|delete  :> d <table_id> <key>\n");
 	printf("|find    :> f <table_id> <key>\n");
 	printf("|quit    :> q\n");
-	printf("|u|sage again! :> u\n");
+	printf("|usage again! :> u\n");
 	printf("|open table  :> o <path>\n");
 	printf("|close table :> c <table_id>\n");
 	printf("|transaction begin : 0\n");

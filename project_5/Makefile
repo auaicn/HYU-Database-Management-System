@@ -14,7 +14,7 @@ TARGET_SRC:=$(SRCDIR)main.c
 TARGET_OBJ:=$(SRCDIR)main.o
 
 # Include more files if you write another source file.
-SRCS_FOR_LIB:=$(SRCDIR)bpt.c 
+SRCS_FOR_LIB:=$(SRCDIR)bpt.c
 OBJS_FOR_LIB:=$(SRCS_FOR_LIB:.c=.o)
 
 CFLAGS+= -g -fPIC -I $(INC)
@@ -29,7 +29,7 @@ $(TARGET): $(TARGET_OBJ)
 	$(CC) $(CFLAGS) -o $@ $^ -L $(LIBS) -lbpt
 
 clean:
-	rm $(TARGET) $(TARGET_OBJ) $(OBJS_FOR_LIB) $(LIBS)*
+	rm $(TARGET) $(TARGET_OBJ) $(OBJS_FOR_LIB) $(LIBS)* log.txt
 
 library:
 	gcc -shared -Wl,-soname,libbpt.so -o $(LIBS)libbpt.so $(OBJS_FOR_LIB)

@@ -17,8 +17,7 @@ int main(int argc, const char* argv[]) {
 	// no special function in init()
 	// but for later implementation
 
-	//usage();
-	init();
+	usage();
 	init_db(atoi(argv[1]));
 
 	fprintf(stderr, "> ");
