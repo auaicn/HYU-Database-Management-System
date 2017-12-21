@@ -74,9 +74,10 @@ extern log_manager* LOG_MANAGER;
 void new_transactional_unit();
 log* new_log(int type);
 void new_log_manager();
+log* read_one_log();
 int flush_transaction();
 int remove_transaction();
-
+void append_to_transaction(log* new_log);
 
 int display_current_transaction_log_on_memory();
 void recovery();
@@ -84,6 +85,8 @@ int begin_transaction();
 int commit_transaction();
 int abort_transaction();
 int update(int table_id, int64_t key, char* value);
+
+void setter_leaf_value(char*frame, int index, char* new_value);
 
 //changed interface
 void flush_page(buffer_structure* block);
@@ -101,6 +104,7 @@ int getter_log_value_4byte(log* single_log, int offset);
 void init();
 void usage();
 table_structure* get_table_structure(int table_id);
+table_structure* get_table_structure_by_name(char* pathname);
 
 void shutdown_db();
 int open_table(char* path);

@@ -141,6 +141,7 @@ void recovery()
 			//we got file
 			fprintf(stderr,"lets rdo update log\n");
 			fprintf(stderr,"again look for table\n");
+
 			table = get_table_structure_by_name(pathname);
 			if (table == NULL) {
 				fprintf(stderr,"table_structure not set yet\n");
@@ -406,7 +407,7 @@ void append_to_transaction(log* new_log) {
 	memcpy(new_log->frame + LSN, &(LOG_MANAGER->current_transaction->lastLSN), 8);
 
 	printf("appending to current transaction\n");
-	printf("current lastLSN in trasactional unit : %d\n", LOG_MANAGER->current_transaction->lastLSN);
+	printf("current lastLSN in trasactional unit : %ld\n", LOG_MANAGER->current_transaction->lastLSN);
 	log* search = LOG_MANAGER->current_transaction->begin;
 	if (search == NULL){
 		new_log->next = NULL;
@@ -429,7 +430,7 @@ int open_table(char* pathname) {
 	//project 5 implementation
 	//we limit the file name format as "DATA[NUM]" (for exaample, there should be
 	//data files named like "DATA1", "DATA2",....)
-	bool data_file = false;
+	int data_file = false;
 	
 	char* filename_check = (char*)malloc(100);
 	memcpy(filename_check, pathname, 4);
@@ -1130,6 +1131,25 @@ int coalesce_pages(buffer_structure* parent, buffer_structure* page, buffer_stru
 	return delete_entry(parent, prime_key); //prime_key down.
 
 }
+
+int64_t getter_log_value_8byte(log* single_log, int offset){
+	if(single_log==NULL) {
+		fprintf(stderr,"single log is NULL\n");
+		exit(EXIT_FAILURE);
+	}
+	int64_t temp; memcpy(&temp,single_log->frame+offset,8);
+	return temp;
+}
+
+int getter_log_value_4byte(log* single_log, int offset){
+	if(single_log==NULL) {
+		fprintf(stderr,"single log is NULL\n");
+		exit(EXIT_FAILURE);
+	}
+	int temp; memcpy(&temp,single_log->frame+offset,4);
+	return temp;
+}
+
 
 
 int page_key_record_size(buffer_structure* page) {
